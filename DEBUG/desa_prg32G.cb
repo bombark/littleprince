@@ -1,0 +1,1533 @@
+; Código para rotina desassembladora versão 1.03 - 16/03/01 23:13;
+; (Código Intel #16)
+; Usa: FASM ASSEMBLER, rotinas: print$mem.nsm
+; Autor: Clovis Bombardelli
+
+
+;-----------------------------------------------------------------------------------------
+; Resumo: dado um determinado endereço binário, o programa escreve numa região da memória
+; a instrução desassemblada que representa o código existente no endereço fornecido.
+; Deve ser fornecido também a posição de escrita na memória.
+
+; Esta rotina deve ser instalada em portão, nivel 3 ou menor.
+
+; Espaços de códigos indicados por "livre" posicionam cy=1
+; Códigos "vazio" não marcam carry flag. As instruções terão sempre de 2 bytes
+
+; flags de ch
+; #7 	0- end #16	1- end#32
+; #6 	0- op #16		1- op#32
+; #5	0- dado byte	1- dado word ou dword
+; #4	0-rm,r		1- r,rm
+; #3	uso diverso, depende da instrução
+; #2,1,0	000- sem prefixo,
+;	001- es:,
+;	010- cs:,
+;	011- ss:,
+;	100- ds:,
+;	101- fs:,
+;	110- gs:,
+;	111- não usado
+
+; Condições que geram erro devem posicionar #0[ah]=1 para na saida posicionar cy=1
+; Instrução lock marca #2[ah]=1 para ser utilizado pelas demais instruções para verificar
+; a validade das mesmas.
+
+
+; Para testar este programa, foi desviado o inicio da entrada para teste,
+; onde se fixa o endereço do codigo a ser testado e o endereço para a escrita.
+
+; a instrução é escrita no endereço
+; 0x2010 (#16) e 0x2020 (#32).
+;
+; exemplo para teste:
+;teste		mov ebx,0x3000
+;		mov edi, 0x3010		; #1[ah] = 1 erro
+;		mov ch, [modo]		; #2[ah] = 1 usado por lock
+;		call desa_ini
+;		int3			; #5[ah] = 1 imprime opcode
+;		int 0x20
+
+;-----------------------------------------------------------------------------------------
+
+align 4
+desa_ini:		; rotina principal
+	push ecx
+	push edx
+	mov ah, ch			; salva ambiente em ah - desa01 e desa2
+	and ch, 0xc0			; só usa os bits #6 e #7 (ver detalhes)
+
+	push esi
+
+continue:
+	xor edx, edx			; ax deve ficar zerado aqui
+	mov dl, [ebx]
+
+	call imp_opcodehexg			; imprimir na memoria
+
+	inc ebx				; al contém o caratere para impressão.
+	mov cl, dl			; se for 00, terminou,
+	mov esi, edx
+	shl esi, 2
+
+reentra:	mov esi, [esi + base_indices]		; busca o indice relativo ao 1. codigo
+	or edx, [DP_CurrentColor]		;1
+.loop:	mov dl, [esi]			; loop de impressão
+	inc esi
+   	cmp dl, 0xff
+	je .a
+	or dl, dl
+	je .saida
+	call Imp_dl_gtexto			; imprime al (Imp_dl_gtexto)
+	jmp .loop
+
+.a:	mov dl, [esi]			; busca rotina ff
+	and edx, 0xff
+	inc esi
+	shl edx, 2
+	call dword [edx + base_rotinas_ff - 0x4]
+	jmp .loop
+
+.saida:	pop esi		; saida geral
+	test ah, 0x01	;
+	je .b
+	stc
+.b:	pop edx
+	pop ecx
+	ret
+
+; ent:	ds:ebx= posição da leitura
+;	es:edi= posição da escrita
+;	ch= ambiente
+; para ambiente #32 setar #6,7 =1,
+; para ambiente #16 setar #6,7=0 (outros bits são desconsiderados)
+; usar outra flag para diferenciar impressao na tela ou na memoria (#5)...reformar
+
+; sai:	cy=0 ok	ebx= posiçao da próxima instrução
+;		edi= posição seguinte à impressão
+; 	cy=1	encontrada instrução inválida.
+
+; alt:	ebx, edi, eax, cx
+
+;
+; escreve um byte de opcode em memoria
+align 4
+imp_opcodehexg:	; exige um buffer em memoria para composicao
+	test ah, 0x20
+	je .a
+	push ebx
+	movzx ebx, byte [opcode_cont]
+	mov [buffer_opcode+ebx], dl
+	inc ebx
+	mov [opcode_cont],bl
+	pop ebx
+.a:	ret
+
+
+align 4
+imp_dwOpcodehexg:
+	test ah, 0x20
+	je .a
+	push ebx
+	movzx ebx, byte [opcode_cont]
+	mov [buffer_opcode+ebx], dl
+	inc ebx
+	ror edx, 8
+	mov [buffer_opcode+ebx], dl
+	inc ebx
+	ror edx, 8
+	mov [opcode_cont],bl
+	pop ebx
+.a:	ret
+
+
+align 4
+imp_ddOpcodehexg:
+	test ah, 0x20
+	je .a
+	push ebx
+	movzx ebx, byte [opcode_cont]
+	mov [buffer_opcode+ebx], dl
+	inc ebx
+	ror edx, 8
+	mov [buffer_opcode+ebx], dl
+	inc ebx
+	ror edx, 8
+	mov [buffer_opcode+ebx], dl
+	inc ebx
+	ror edx, 8
+	mov [buffer_opcode+ebx], dl
+	inc ebx
+	ror edx, 8
+	mov [opcode_cont],bl
+	pop ebx
+.a:	ret
+
+
+;-----------------------------------------------------------------------------------------
+
+; rotinas ff
+; marca tamanho do operando
+align 4
+desa01:	add esp, 0x04		;***
+	test ah, 0x40
+	je .a
+	and ch, 0xbf		; 1011 1111, zera #6
+	jmp continue
+.a:	or ch, 0x40		; seta #6
+	jmp continue
+
+
+; marca tamanho do endereçamento
+align 4
+desa02:	add esp, 0x04		;***
+	test ah, 0x80
+	je .a
+	and ch, 0x7f		; zera #7
+	jmp continue
+.a:	or ch, 0x80		; seta #7
+	jmp continue
+
+
+; marca prefixo segmento (es, cs, ss, ds)
+align 4
+desa03:	add esp, 0x04		;***
+	and ch, 0xf8
+	test cl, 0x10
+	jne .a
+	test cl, 0x8
+	jne .b
+	or ch, 0x1		; es
+	jmp continue
+.a:	test cl, 0x8
+	jne .c
+	or ch, 0x3		; ss
+	jmp continue
+.b:	or ch, 0x2		; cs
+	jmp continue
+.c:	or ch, 0x4		; ds
+	jmp continue
+
+
+; marca prefixo segmento (fs, gs)
+align 4
+desa04:	add esp, 0x4		;***
+	and ch, 0xf8
+	test cl ,0x1
+	jne .a
+	or ch, 0x5		; fs
+	jmp continue
+.a:	or ch, 0x6		; gs
+	jmp continue
+
+
+; opcode de 2 bytes, reentra
+align 4
+desa05 :	mov dl, [ebx]
+	call imp_opcodehexg
+	inc ebx
+	mov cl, dl		; dl=2o opcode (01,02,08 ou 09)
+	mov esi, edx
+	shl esi, 2		;1
+	add esi, 0x400
+	add esp, 0x4		;***
+	jmp reentra
+; continue: busca novo byte de código
+
+
+; Seleciona e imprime iv ou ib em função de #0[cl]
+align 4
+desa06 :	test cl, 0x1
+	jne desa09
+; Imprime byte hex
+desa08:	mov dl, [ebx]
+	call imp_opcodehexg
+	inc ebx
+	mov al,dl
+	call graph_bytehex		; imprime ib hex
+	ret
+
+
+; Seleciona iv ou iw em função de #6[cl]
+align 4
+desa09 :	test ch, 0x40
+	je desa0a
+.a:	mov edx, [ebx]		; imprime id
+	call imp_ddOpcodehexg
+	add ebx, 0x4
+	call graph_rd_hex		; imprime id hex
+	mov edx, [DP_CurrentColor]
+	ret
+
+
+; imprime word hex
+align 4
+desa0a :	mov dx, [ebx]
+	call imp_dwOpcodehexg
+	add ebx, 0x2
+	call graph_wo_hex		; imprime iw hex
+	mov edx, [DP_CurrentColor]
+	ret
+
+
+; seleciona e imprime ib, iv em função de #5[ch]
+align 4
+desa07:	test ch, 0x20
+	jne desa09		; #5[ch]=1, imprime word ou dword
+	jmp desa08		; #5[ch]=0, imprime byte
+
+
+; Imprime endereço direto em função de #7[ch]
+align 4
+desa23:	test ch,0x80
+	je desa0a			; imprime iw
+	jmp desa09		; imprime iv (pode ser iw ou id)
+
+
+; seleciona ab ou av em função de #0[cl]
+align 4
+desa0b :
+	test cl, 0x1
+	jne desa0f
+	push esi
+	mov esi, reg8
+	or edx, [DP_CurrentColor]
+.a:	call imp_stringzGS	; imprime rb
+	pop esi
+	ret
+
+
+; seleciona e imprime ax ou eax
+align 4
+desa0f :	push esi
+	mov esi, reg32
+.b:	or edx, [DP_CurrentColor]
+	test ch, 0x40
+	jne .a
+	inc esi
+.a:	call imp_stringzGS		; imprime rw ou rd
+	pop esi
+	ret
+
+
+; Imprime D, em função do prefixo 66
+align 4
+desa15 :	test ch, 0x40
+	je .a
+	mov dl, 'd'
+	or edx, [DP_CurrentColor]
+	call Imp_dl_gtexto
+.a:	ret
+
+
+; Imprime ib ou cl
+align 4
+desa32 :	test ch, 0x8
+	je desa06
+	push esi
+	mov esi, reg8+0x3
+	or edx, [DP_CurrentColor]
+	call imp_stringzGS
+	pop esi
+	ret
+
+
+; Escolhe e imprime rv em função de #6[ch] e #0,1,2[cl]
+align 4
+desa0e :
+	;and edx, 0xff		; tem shl edx, 07 embaixo
+	mov dl, cl
+.a:	push esi
+	mov esi, reg32
+	and edx, 0x7		; filtra 8 condições
+	shl dl, 0x2		; al*4
+	add esi, edx
+	or edx, [DP_CurrentColor]
+.b:	test ch, 0x40
+	jne .c			; eax
+	inc esi			; ax
+.c:	call imp_stringzGS
+	pop esi
+	ret
+
+
+; Escolhe e imprime rb em função de #0,1,2[cl]
+align 4
+desa10 :	mov dl, cl
+.a:	push esi
+	mov esi, reg8
+	and edx, 0x7
+.b:	mov al, dl
+	shl dl, 1   		; al*2+al=al*3************************************1
+	add dl, al
+	add esi, edx
+	or edx, [DP_CurrentColor]
+	call imp_stringzGS	; imprime
+	pop esi
+	ret
+
+
+; Seleciona e imprime condição
+align 4
+desa11 :	push esi
+	mov esi, cond
+	mov dl, cl
+	and edx, 0x0f		; filtra 16 condições
+	mov al, dl		; pode-se usar jmp desa10.b neste ponto
+	shl dl, 1			;*************************************************1
+	add dl, al
+	add esi, edx
+	or edx, [DP_CurrentColor]
+	call imp_stringzGS
+	pop esi
+	ret
+
+
+; Imprime B, W ou D
+align 4
+desa18 :	mov dl, 'b'
+	or edx, [DP_CurrentColor]
+	test cl, 1
+	je .a
+	mov dl, 'w'
+	test ch, 0x40
+	je .a
+	mov dl, 'd'
+.a:	call Imp_dl_gtexto
+	ret
+
+
+; Busca byte rm e escolhe rmb / rmv ou rb / rv em função de #0[cl]
+align 4
+rmb_rmv:	test cl, 1
+	je desa13
+	or ch, 0x20
+
+; Busca byte rm e escolhe rmb / rmv ou rb / rv (memória ou registrador)
+desa13:	mov dl, [ebx]
+	call imp_opcodehexg
+	inc ebx
+	mov cl, dl
+
+; Escolhe rmb / rmv ou rb / rv
+rmv:	xor dl, 0xc0		; verifica se #6,7 = 11 - end. por registrador
+	test dl, 0xc0
+	je rv
+
+; Escolhe memória
+memv:	call desa17		; imprime prefixo de segmento, se existir
+
+	mov dl, cl
+	and edx, 0x7
+	shl edx, 2
+	test ch, 0x80
+	je .a
+	add edx, modo32 - modo16
+.a:	push esi
+	mov esi, modo16
+	add esi, edx
+	call aux_busca
+;int 1
+	pop esi
+	ret
+; Escolhe rb ou rv (escolhe registrador)
+rv:	test ch, 0x20
+	jne near desa0e		; imprime rv
+	jmp desa10		; imprime rb
+
+
+align 4
+aux_busca:
+		mov esi, [esi]	; busca ponteiro da string
+.a:		mov dl, [esi]	; loop de impressão
+		inc esi
+		cmp dl, 0xff
+		je .b
+		or dl, dl
+		je .saida
+		or edx, [DP_CurrentColor]
+		call Imp_dl_gtexto	; imprime al (Imp_dl_gtexto)
+		jmp .a
+.b:		mov dl, [esi]	; busca rotina ff
+		inc esi
+	and edx, 0xff
+		shl edx, 2
+		call dword [edx + base_rotinas_ff - 0x4]
+		;xor dl, dl	; GARANTE EAX=0
+		jmp .a
+.saida:		ret
+
+
+; Imprime rmb ou rmv dependendo de #5[ch] (usada pelas instruções do grupo 4 e 5)
+align 4
+desa3a :	push esi
+	mov dl,cl
+	call desa16.b		; rb ou mb
+	pop esi
+	ret
+
+
+; Imprime rmb ou rmv com prefixo de segmento + by, wo ou dw
+align 4
+desa16:	test cl, 1
+	je .a
+.c:	or ch, 0x20
+.a:	mov dl, [ebx]
+	call imp_opcodehexg
+	inc ebx
+	mov cl, dl
+.b:	xor dl, 0xc0		; busca rm, inverte #6,7 (qq valor=1 -> busca mem)
+	test dl, 0xc0
+	je rv			; busca r
+	call aux16		; imprime by, wo ou dw
+	jmp memv			; busca m
+
+
+; imprime "by", "wo" ou "dw"
+align 4
+aux16 :	push esi
+	mov esi, tipo
+	test ch, 0x20	; dado variavel ou byte
+	je .a
+	add esi, 0x3
+	test ch, 0x40	; operando #32
+	je .a
+	add esi, 0x3
+.a:	or edx, [DP_CurrentColor]
+	call imp_stringzGS
+	pop esi
+	ret
+
+
+; Busca e imprime registrador de segmento como prefixo
+align 4
+desa17 :	mov dl, ch	; deve ser ch
+	and edx, 0x7	;
+	je .a
+	call aux17
+	or edx, [DP_CurrentColor]
+	mov dl, ':'
+	call Imp_dl_gtexto
+.a:	mov edx, [DP_CurrentColor]
+	ret
+
+align 4
+aux17:	push esi			; imprime registrador de segmento
+	mov esi, regseg - 0x3
+	jmp desa10.b
+
+
+; Altera "esi" para buscar uma das quatro instruções: "cbw", "cwde", "cwd" ou "cdq"
+align 4
+desa19 :	mov esi, _cbw
+	test cl, 1
+	jne .a
+	test ch, 0x40
+	je .saida
+	mov esi, _cwde
+	jmp .saida
+.a:	mov esi, _cwd
+	test ch, 0x40
+	je .saida
+	mov esi, _cdq
+.saida:	ret			; saida geral
+
+
+; Imprime endereço relativo curto
+align 4
+desa1a:
+	movsx edx, byte [ebx]
+	call imp_ddOpcodehexg
+	inc ebx
+.a:	add edx, ebx
+	test ch, 0x40
+	;push edx
+	je near graph_wo_hex	; imprime endereço curto....tirar push edx acima
+	jmp graph_rd_hex		; imprime endereço longo
+
+; busca instrução apontada pelo deslocamento....trava se encontrar jmp $
+	jne .b
+	call graph_wo_hex
+	jmp .c
+.b:	call graph_rd_hex
+.c:	pop edx
+	mov [DP_posX], 0x140
+	push ebx
+	mov ebx, edx
+	mov [DP_CurrentColor], DP_InstrColor5
+	call desa_ini
+	pop ebx
+	mov [DP_CurrentColor], DP_RegColor
+	;and ah, not 0x10
+	ret
+
+; Imprime endereço relativo longo
+align 4
+desa1b:	test ch, 0x80
+	jne .a
+	movsx edx, word [ebx]
+	call imp_ddOpcodehexg
+	add ebx, 0x2
+	jmp desa1a.a
+.a:	mov edx, [ebx]
+	call imp_ddOpcodehexg
+	add ebx, 0x4
+	jmp desa1a.a
+
+
+; Imprime es, cs, ss ou ds (OK 30/01/01 15:43)
+align 4
+desa1c :	push esi
+	mov esi, regseg - 0x2
+	mov dl, cl
+	shl dl, 1
+	add dl, cl
+	shr dl, 0x3
+	and edx, 0xf
+	add esi, edx
+	or edx, DP_RegSegColor
+	call imp_stringzGS
+	pop esi
+	ret
+
+
+; Imprime fs ou gs
+align 4
+desa1d :	push esi
+	mov esi, regseg + 0x0C
+	test cl, 0x8
+	je .a
+	add esi, 0x3
+.a:	or edx, DP_RegSegColor
+	call imp_stringzGS
+	pop esi
+	ret
+
+
+; Imprime ecx ou cx
+align 4
+desa1e :	push esi
+	mov esi, reg32 + 0x4
+	test ch, 0x40
+	jne .a
+	inc esi
+.a:	or edx, [DP_CurrentColor]
+	call imp_stringzGS
+	pop esi
+	ret
+
+
+; Imprime ne ou e em função de #0[cl]
+align 4
+desa1f :	push esi
+	mov esi, cond + 0x0f
+	test cl, 1
+	je .a
+	inc esi
+.a:	or edx, [DP_CurrentColor]
+	call imp_stringzGS
+	pop esi
+	ret
+
+
+; escolhe um dos nomes adc, or, add...cmp em função de #3,4,5[cl]
+align 4
+desa20 :	mov dl, cl	; OK 30/03/01 20:29
+	test dl, 0x2
+	je .a
+	or ch, 0x10
+.a:	push esi
+	mov esi, grupo1	; adc, or, add....cmp
+.b:	shr dl, 1
+	and edx, 0x1c
+	add esi, edx
+	or edx, [DP_CurrentColor]
+	call imp_stringzGS
+	pop esi
+	ret
+
+
+; Busca byte rm e imprime "rv,rmv/rmv,rv" ou "rb,rmb/rmb,rb"
+; (vale todo intervalo para byte rm)
+align 4
+desa21:	test ch, 0x10
+	je .a
+	test cl, 1
+	je .b
+.c:	or ch, 0x20
+.b:	mov dl, [ebx]
+	call imp_opcodehexg
+	inc ebx
+	mov cl, dl
+.d:	call R_reg		; imprime r'
+.e:	mov dl, ','
+	or edx, [DP_CurrentColor]
+	call Imp_dl_gtexto
+	mov dl, cl
+	jmp rmv			; imprime m ou r
+
+.a:	call rmb_rmv		; imprime m ou r
+	mov dl, ','
+	or edx, [DP_CurrentColor]
+	call Imp_dl_gtexto		; continua em R_reg
+
+; Imprime rb ou rv em função de #4,5,6[cl]
+R_reg:	mov dl, cl
+	shr dl, 0x3
+	test ch, 0x20
+	jne near desa0e.a		; imprime rv
+	jmp desa10.a		; imprime rb
+
+
+; Imprime "mov" setando #5[ch] se #0[cl]=1 e #4[ch] se #1[cl]=1
+align 4
+desa22 :	push esi
+	mov esi, _mov
+	test cl, 0x1
+	je .a
+	or ch, 0x20
+.a:	test cl, 0x2
+	je .b
+	or ch, 0x10
+
+.b:	or edx, [DP_CurrentColor]
+	call imp_stringzGS
+	pop esi
+	ret
+
+
+; Busca byte rm e seleciona um dos nomes do grupo1 em função #3,4,5[byte rm]
+align 4
+desa24:	test cl, 1
+	je .a
+	or ch, 0x20
+.a:	mov dl, [ebx]
+	call imp_opcodehexg
+	inc ebx
+	mov cl, dl
+	call desa20.a	; busca nome da instrução em função #3,4,5[byte rm]
+.b:	mov dl, ' '
+	;or edx, [DP_CurrentColor]
+	call Imp_dl_gtexto	; imprime espaço
+	mov dl, cl
+	jmp desa16.b	; busca end à memória em função #1,2,3[byte rm]
+
+
+; Busca byte rm e seleciona um dos nomes do grupo 2....
+align 4
+desa25:	test cl, 0x1
+	je .a
+	or ch, 0x20
+.a:	mov dl, [ebx]
+	call imp_opcodehexg
+	inc ebx
+	mov cl, dl
+	call aux25	; busca nome do grupo 2 em função #3,4,5[byte rm]
+	jmp desa24.b	; repete rotina  de endereçamento à memória
+
+
+; Busca nome das instruções do grupo 2
+align 4
+aux25:	push esi
+	mov esi, grupo2
+	jmp desa20.b
+
+
+; Imprime aviso3 (para ser usada somente internamente à rotina aux_busca (ver grupo3))
+; aux27, mas deve ser indexada por isso recebeu o nome desa26
+align 4
+desa26 :	push esi
+	mov esi, aviso3
+	or edx, [DP_CurrentColor]
+	call imp_stringzGS
+	add esp, 0x0c
+	pop esi
+	or ah, 0x01
+	add esp, 0x4
+	ret
+
+
+; Busca byte rm e escolhe nome do grupo 3...
+align 4
+desa27:	test cl, 1
+	je .a
+	or ch, 0x20
+.a:	mov dl, [ebx]
+	call imp_opcodehexg
+	inc ebx
+	mov cl, dl
+	push esi
+	mov esi, grupo3
+	and edx, 0xff
+	shr dl, 0x3
+	and edx, 0x7
+	je .b		; instruçao test m,i
+	mov al, dl	; rotina para as demais instruções (NOT...NEG...)
+	shl dl, 0x2	; x4
+	add dl, al	; x5
+	and eax, 0x3f	; filtra
+	add esi, edx	; ajusta ponteiro
+	call aux_busca.a	; se a rotina 0xff26 for encontrada, imprime aviso3 e sai
+	pop esi
+	mov dl, ' '
+
+	call Imp_dl_gtexto 	; imprime espaço
+	mov dl, cl
+	jmp desa16.b
+; test rmv,iv
+.b:	call aux_busca.a		; rotina especifica para test grmv,iv
+	mov dl, ' '
+	call Imp_dl_gtexto		; imprime espaço
+	mov dl, cl
+	call desa16.b		; busca rmv
+	mov dl, ','
+	or edx, [DP_CurrentColor]
+	call Imp_dl_gtexto		; imprime ','
+	pop esi
+	jmp desa07
+
+
+; Busca endereço far imediato.....imprimir instrução apontada pelo endereço
+align 4
+desa28 :	test ch, 0x40
+	je .a
+	push dword [ebx]
+	add ebx, 0x4
+	call desa0a
+	mov dl, ':'
+	call Imp_dl_gtexto
+	pop edx
+	call graph_rd_hex
+	mov edx, [DP_CurrentColor]
+	retn
+.a:	push word [ebx]
+	add ebx, 0x2
+	call desa0a
+	mov dl, ':'
+	or edx, [DP_CurrentColor]
+	call Imp_dl_gtexto
+	pop edx
+	call graph_wo_hex
+	mov edx, [DP_CurrentColor]
+	ret
+
+
+; Busca deslocamento nos modos de endereçamento					OKfev2008
+align 4
+desa29 :	test cl, 0xc0
+	je .a
+	test cl, 0x80
+	jne .b
+	mov al, [ebx]
+	inc ebx
+	test al, 0x80
+	je .c
+	mov dl, '-'
+	neg al
+	jmp .d
+.c:	mov dl, '+'
+.d:	or edx, [DP_CurrentColor]
+	call Imp_dl_gtexto
+	mov dl, al
+	call imp_opcodehexg
+	call graph_bytehex
+	mov edx, [DP_CurrentColor]
+	retn
+
+.b:	test ch, 0x80
+	jne .e
+	mov dx, [ebx]
+	call imp_dwOpcodehexg
+	add ebx, 0x2
+	test dh, 0x80
+	je .f
+	neg edx
+	push edx
+	xor edx, edx
+	mov dl, '-'
+	jmp .g
+.f:	push edx
+	mov dl, '+'
+.g:	or edx, [DP_CurrentColor]
+	call Imp_dl_gtexto
+	pop edx
+	call graph_wo_hex
+	mov edx, [DP_CurrentColor]
+	retn
+
+.e:	mov edx, [ebx]
+	call imp_ddOpcodehexg	; imprime opcode
+	add ebx, 0x4
+	bt edx, 0x1f
+	jae .h
+	neg edx
+	push edx
+	xor edx, edx
+	mov dl, '-'
+	jmp .i
+.h:	push edx
+	mov dl, '+'
+.i:	or edx, [DP_CurrentColor]
+	call Imp_dl_gtexto
+	pop edx
+	call graph_rd_hex
+	mov edx, [DP_CurrentColor]
+.a:	ret
+
+
+; Executa rotina 21 com #5[ch]=1. Referencia à memoria tipo rv,rmv incondicional
+align 4
+desa2a:	or ch, 0x10
+	jmp desa21.c
+
+
+; Busca byte rm e busca endereçamento à memoria (rv,m).
+; Referencia a registrador imprime instrução inválida
+align 4
+desa2b :	or ch, 0x20	; marca para rv, para usar a rotina 21
+	mov dl, [ebx]
+	call imp_opcodehexg
+	inc ebx
+	mov cl, dl
+	xor dl, 0xc0
+	test dl, 0xc0
+	jne near desa21.d
+	push esi		; instrução inválida se referenciar um registrador
+	mov esi, aviso5
+	or edx, [DP_CurrentColor]
+	call imp_stringzGS
+	pop esi
+	or ah, 0x01	; marcação de erro para acionar cy=1 na saida
+	ret
+
+
+; Executa rotina 21 com #6[ch]=0. usada pela instrução "arpl"
+align 4
+desa2c:	and ch, 0xbf
+	jmp desa21.a
+
+
+; Busca byte rm especifica para referencia a registradores de segmento (rseg,mem ou mem,rseg)
+align 4
+desa2d :	or ch, 0x20
+	and ch, 0xbf	; fixa registradores sempre do tipo word
+	test cl, 2
+	je .a
+; ordem rseg, mem
+	mov dl, [ebx]
+	call imp_opcodehexg
+	inc ebx
+	mov cl, dl
+	or ch, 0x8	; fixa o modo de uso da rotina aux2d
+	call aux2d
+	jmp desa21.e
+; ordem mem, rseg
+.a:	call desa13
+	mov dl, ','
+	or edx, [DP_CurrentColor]
+	call Imp_dl_gtexto
+
+aux2d:	push esi
+	and edx, 0xff
+	mov esi, regseg
+	mov dl, cl
+	and edx, 0x38
+	test ch, 0x8
+	je .a
+	cmp dl, 0x8
+	je .b
+.a:	mov al, dl
+	shl dl, 1
+	add dl, al
+	shr dl, 3
+	cmp dl, 0xf
+	ja .b
+	add esi, edx
+	jmp .c
+.b:	mov esi, aviso2
+	or ah, 0x1	; posiciona erro
+.c:	or edx, [DP_CurrentColor]
+	call imp_stringzGS
+	pop esi
+	ret
+
+
+; Rotina especifica para prefixos "rep", "repe" e "repne"
+align 4
+desa2e:	mov dl,[ebx]
+	call imp_opcodehexg
+	inc ebx
+	push edx
+	xor dl, 0xa6
+	test dl, 0xa6
+	jne .a		; pula se for "rep"
+	call desa1f	; imprime "e" ou "ne"
+.a:	mov dl, ' '
+	or edx, [DP_CurrentColor]
+	call Imp_dl_gtexto
+	pop edx
+	mov cl, dl
+	mov esi, edx
+	shl esi, 2	;						OK
+	add esp, 0x4
+	jmp reentra
+
+
+; antiga rotina 2f
+; sem_uso		mov al, [ebx]
+;		call imp_opcodehexg
+; 		inc ebx
+; 		mov cl, al
+; 		mov si, ax
+; 		shl si, 1
+; 		jmp aux_busca
+
+
+; Rotina especifica para as instruções movsx e movzx
+align 4
+desa30 :	test cl, 1
+	je .a
+	or ch, 0x20
+.a:	mov dl, [ebx]
+	call imp_opcodehexg
+	inc ebx
+	mov cl, dl
+	or edx, [DP_CurrentColor]
+	test ch, 0x20
+	je .b
+	or ch, 0x40
+	call R_reg		; registrador
+	and ch, 0xbf
+.c:	mov dl, ','
+	call Imp_dl_gtexto
+	mov dl, cl
+	jmp desa16.b		; memoria
+
+.b:	or ch, 0x01
+	call R_reg
+	and ch, 0x9f
+	jmp .c
+	ret
+
+
+; Busca byte rm para endereçamento tipo rmv,rv. marca #3[ch]=1 se #0[byte anterior]=1
+align 4
+desa31:	test cl, 1
+	je .a
+	or ch, 0x08
+.a:	call desa16.c	; busca byte rm e imprime m ou r
+	mov dl, ','
+	or edx, [DP_CurrentColor]
+	call Imp_dl_gtexto
+	jmp R_reg		; imprime r'
+
+
+; Escolhe e imprime uma das letras: "s", "r" ou "c"
+align 4
+desa33 :	mov dl, cl
+	sub dl, 0xa3
+	je .a
+	shr dl, 0x1
+	push esi
+	mov esi, src - 0x2
+	add esi, edx
+	or edx, [DP_CurrentColor]
+	call imp_stringzGS
+	pop esi
+.a:	ret
+
+
+; Escolhe e imprime uma das letras: "s", "r" ou "c", específica para grupo 8
+align 4
+desa34:	mov dl, [ebx]
+	call imp_opcodehexg
+	inc ebx
+	mov cl, dl
+	and edx, 0x38
+	shr dl, 1
+	or ch, 0x8
+	cmp dl, 0x8
+	je .a
+	push esi
+	jb .b
+	mov esi, src - 0xa
+	add esi, edx
+	or edx, [DP_CurrentColor]
+.c:	call imp_stringzGS
+	pop esi
+.a:	ret
+.b:	mov dl, 'x'	; instrução inválida se fora do intervalo válido
+	or edx, [DP_CurrentColor]
+	call Imp_dl_gtexto	; #3,4,5[byte rm] < 4
+	mov esi, aviso5
+	or ah, 0x01
+	jmp .c
+
+
+; Escolhe uma das funções do grupo 0f00 ("ldtr", "str"....etc), em função de #3,4,5[byte rm]
+align 4
+desa35 :	push esi
+	mov esi, grupo6
+.a:	mov dl, [ebx]	; busca byte rm
+	call imp_opcodehexg
+	inc ebx
+	and edx, 0xff
+	mov cl, dl
+	and edx, 0x38
+	shr dl, 1		; desloca 8 por 1(/2) para calcular o endereço dentro do bloco grupo6
+	add esi, edx
+	call aux_busca.a
+	pop esi
+	ret
+
+
+; Busca endereçamento rmw em função de #0,1,2[cl]
+align 4
+desa36:	and ch, 0xbf	; zera #6, seta #5
+	or ch, 0x20	; fixa variavel em word
+	mov dl, cl
+	jmp desa16.b			; busca modo de endereçamento
+
+
+; Busca endereçamento m em função de #0,1,2[cl]. O tamanho do operando depende da instrução
+align 4
+desa37:	mov dl, cl
+	xor dl, 0xc0
+	test dl, 0xc0
+	je desa38		; mostra aviso de instrução inválida se o endereço referenciar registrador
+	jmp rmv		; busca modo de endereçamento
+
+
+; Imprime "Instrução inválida"
+align 4
+desa38 :	push esi
+	mov esi, aviso1
+	or edx, [DP_CurrentColor]
+	call imp_stringzGS
+	pop esi
+	or ah, 0x01	; posiciona marca para erro
+	ret
+
+
+; Escolhe uma das funções do grupo 0f01, em função de #3,4,5 [byte rm]
+align 4
+desa39:	push esi
+	mov esi, grupo7
+	jmp desa35.a
+
+
+; Busca byte rm e escolhe uma das instruções do grupo 5
+align 4
+desa3b:	or ch, 0x20
+	mov esi, grupo5
+	mov dl, [ebx]
+	call imp_opcodehexg
+	inc ebx
+	mov cl, dl
+	jmp aux4d
+
+
+; Imprime rmv (usada pela instrução push rmv do grupo 5)
+align 4
+desa3c:	or ch, 0x20
+	jmp desa16.b
+
+
+; Busca proximo byte e imprime "mov" posicionando #6[ch]=1, (usada nas instruções tipo mov cr0, rd)
+align 4
+desa44:	mov dl, [ebx]
+	call imp_opcodehexg
+	inc ebx
+	mov cl, dl
+	or ch, 0x40	; continua na rotina 3d
+
+
+; Imprime 'mov'
+desa3d :	push esi
+	mov esi, _mov
+	or edx, [DP_CurrentColor]
+	call imp_stringzGS
+	pop esi
+	ret
+
+
+; Imprime 'pop'
+align 4
+desa3e :	push esi
+	mov esi, _pop
+	or edx, [DP_CurrentColor]
+	call imp_stringzGS
+	pop esi
+	ret
+
+
+; Imprime 'push'
+align 4
+desa3f :	push esi
+	mov esi, _push
+	or edx, [DP_CurrentColor]
+	call imp_stringzGS
+	pop esi
+	ret
+
+
+; Diferencia [endereçamento direto] de [bp+deslocamento]
+align 4
+desa0c :	test cl, 0xc0
+	je .a			; se #6,7[cl]=0 buscar .a ou .b (end dir)
+	push esi
+	mov esi,0xabcd
+	mov esi, insbp
+	call aux_busca.a
+	pop esi
+	retn
+; busca endereçamento direto word
+.a:	test ch, 0x80
+	jne .b
+	mov dx, [ebx]		; pode-se substituir por jmp desa0a
+	call imp_dwOpcodehexg
+	add ebx, 0x2
+	call graph_wo_hex
+	retn
+; busca endereçamento direto dword
+.b:	mov edx, [ebx]		; pode-se substituir por desa09.a
+	call imp_ddOpcodehexg	; imprime opcode
+	add ebx, 0x4
+	call graph_rd_hex
+	mov edx, [DP_CurrentColor]
+	ret
+
+
+; Diferencia [endereçamento direto] de [ebp+deslocamento]
+align 4
+desa0d :	test cl, 0xc0
+	je desa0c.a
+	push esi
+	mov esi, insebp
+	call aux_busca.a
+	pop esi
+	ret
+
+
+; Busca byte rm para instruções mpu (rotina principal)
+align 4
+desa40 :	push esi
+	mov dl, cl
+	and edx, 0x7
+	mov al, dl
+	mov dl, [ebx]
+	call imp_opcodehexg
+	inc ebx
+	mov cl, dl
+	xor dl, 0xc0
+	test dl, 0xc0
+	je .a
+	mov esi, R_d8	; base do bloco com referencia à memória
+	and edx, 0x38
+	shr dl, 1
+	add esi, edx
+	mov dl, dl
+	shl dl, 4
+	add esi, edx
+	call aux_busca
+	mov dl, cl
+	call memv
+	pop esi
+	retn
+.a:	mov esi, R_d8.c0	; base do bloco com referencia aos registradores
+	shl ax, 2		;***********************************************************1
+	add esi, eax
+	mov dl, al
+	shl edx, 7
+	add esi, edx
+	xor eax, edx
+	call aux_busca
+	pop esi
+	ret
+
+
+; Imprime "st0,stx" em função de #0,1,2[cl]
+align 4
+desa41 :	push esi
+	mov esi, _st
+	or edx, [DP_CurrentColor]
+	call imp_stringzGS
+	mov dl, ','
+	call Imp_dl_gtexto
+	movzx edx, cl
+	and edx, 0x7
+	shl dl, 0x2
+	mov esi, _st
+	add esi,edx
+	or edx, [DP_CurrentColor]
+	call imp_stringzGS
+	pop esi
+	ret
+
+
+; Imprime "stx,st0" em função de #0,1,2[cl]
+align 4
+desa42 :	push esi
+	mov esi, _st
+	mov dl, cl
+	and edx, 0x7
+	shl dl, 0x2
+	add esi,edx
+	or edx, [DP_CurrentColor]
+	call imp_stringzGS
+	mov dl, ','
+	call Imp_dl_gtexto
+	mov esi, _st
+	call imp_stringzGS
+	pop esi
+	ret
+
+
+; Imprime stx em função de #0,1,2[cl]
+align 4
+desa43 :
+	mov dl, cl
+	and edx, 0x7
+	push esi
+	mov esi, _st
+	shl dl, 0x2
+	add esi, edx
+	or edx, [DP_CurrentColor]
+	call imp_stringzGS
+	pop esi
+R_ret:	ret
+
+
+;.Marca erro posicionando #1[ah]=1
+align 4
+desa45:	or ah, 0x1
+	ret
+
+
+; Marca #2[ah]=1 e continua. Rotina especifica para instrução lock
+align 4
+desa46:	or ah, 0x2
+	add esp, 0x4
+	jmp continue
+
+
+; Busca byte rm para instruções dos grupos 12, 13 e 14
+align 4
+desa47 :
+	xor edx, edx
+	mov dl, cl
+	and edx, 3
+	je .a
+	dec dl
+	shl dl, 0x4
+	mov esi, grupo12
+	add esi, edx
+	mov dl, [ebx]
+	call imp_opcodehexg
+	inc ebx
+	mov cl, dl
+	xor dl, 0xc0
+	test dl, 0xc0
+	jne near desa38	; referencia à memoria deve buscar outro ponteiro
+	and edx, 0x38	; ou indicar inst. inválida
+	shr dl, 0x2	; era 2
+	add esi, edx	; só altera si para busca do ponteiro
+	mov esi, [esi]	; busca novo ponteiro
+	ret
+.a:	mov esi, livre
+	ret
+
+
+; Imprime #3,4,5[byte rm] como um numero entre 0 e 7
+align 4
+desa2f:	mov dl, cl
+	and edx, 0x38
+	shr dl, 0x3
+	add dl, 0x30
+	or edx, [DP_CurrentColor]
+	call Imp_dl_gtexto
+	ret
+
+
+; Imprime D, em função do pref. 67 ( semelhante à desa15, mas sensivel ao bit #7[ch]
+; sem_uso2	test ch, 0x80
+;		je .a
+;		mov dl, 'd'
+;		call Imp_dl_gtexto
+;.a		ret
+
+
+; Busca byte sib
+align 4
+desa14:	mov dl, [ebx]
+	inc ebx
+	mov al, dl		; al=dl=sib
+	push esi
+	mov esi, reg32
+	and edx, 0x7
+	shl edx, 0x2
+	add esi, edx
+	or edx, [DP_CurrentColor]
+	call imp_stringzGS		; print base reg
+	mov dl, '+'
+	call Imp_dl_gtexto		; print +
+	xor edx, edx
+	mov dl, al
+	call imp_opcodehexg		;
+	shr dl, 0x3
+	mov esi, reg32
+	and edx, 0x7
+	shl edx, 0x2
+	add esi, edx
+	or edx, [DP_CurrentColor]
+	call imp_stringzGS		; print index reg
+	pop esi
+	push ecx
+	mov cl, al
+	shr cl , 6
+	je .a
+	mov dl , '*'
+	call Imp_dl_gtexto
+	mov dl, 1
+	shl dl, cl
+	add dl, 0x30
+	call Imp_dl_gtexto
+.a:	pop ecx
+	jmp desa29
+
+
+; Escolhe e imprime rd em função de #0,1,2[cl]
+align 4
+desa12 :	push esi
+	mov esi, reg32
+	and edx, 0x7
+	shl edx, 0x2
+	add esi, edx
+	or edx, [DP_CurrentColor]
+	call imp_stringzGS
+	pop esi
+	ret
+
+
+; Busca byte rm e escolhe umas das instruções do grupo 4
+align 4
+desa48:	mov esi, grupo4
+	mov dl, [ebx]
+	call imp_opcodehexg
+	inc ebx
+	mov cl, dl
+	jmp aux4d
+
+
+; Busca byte rm para instruções mmx (rmmx, rmmx/m64)
+align 4
+desa49 :	mov dl, [ebx]
+	call imp_opcodehexg
+	inc ebx
+	mov al, dl
+	shr dl, 3
+	call rmmx
+	mov dl, ','
+	or edx, [DP_CurrentColor]
+	call Imp_dl_gtexto
+	xor edx, edx
+	mov dl, al
+aux4a:	xor dl,0xc0
+	test dl,0xc0
+	je near memv	; Escolhe memória
+rmmx:	push esi		; imprime rmmx, se não for memória
+	mov esi, _xmm + 1
+	and edx, 0x7
+	shl edx, 2
+	add esi, edx
+	or edx, [DP_CurrentColor]
+	call imp_stringzGS
+	pop esi
+	ret
+
+
+; Busca byte rm para instruções mmx reversas (rmmx/m64, rmmx)
+align 4
+desa4a:	mov dl, [ebx]
+	call imp_opcodehexg
+	inc ebx
+	mov cl, dl
+	call aux4a
+	mov dl, ','
+	or edx, [DP_CurrentColor]
+	call Imp_dl_gtexto
+	mov dl, cl
+	shr dl, 3
+	jmp rmmx
+
+
+; Busca byte rm para instrução movd (rmmx,r/m32)
+align 4
+desa4b:	mov dl, [ebx]
+	call imp_opcodehexg
+	inc ebx
+	mov cl, dl
+	shr dl, 3
+	call rmmx
+	mov dl, ','
+	or edx, [DP_CurrentColor]
+	call Imp_dl_gtexto
+	mov dl, cl
+	or ch, 0x60	; seta rd
+	jmp rmv
+
+
+; Busca byte rm para instrução movdr (r/m32,rmmx)
+align 4
+desa4c:	mov dl, [ebx]
+	call imp_opcodehexg
+	inc ebx
+	mov cl, dl
+	or ch, 0x60
+	call rmv
+	mov dl, ','
+	or edx, [DP_CurrentColor]
+	call Imp_dl_gtexto
+	mov dl, cl
+	shr dl, 3
+	jmp rmmx
+
+
+; Busca ponteiro para instruções do grupo 12
+align 4
+desa4d:	mov esi, grupo12
+aux4d:	and edx, 0x38
+	shr dl, 1
+	add esi, edx
+	call aux_busca
+	ret
+
+
+; Busca ponteiro para instruções do grupo 13
+align 4
+desa4e:	mov esi, grupo13
+	jmp aux4d
+
+
+; Busca ponteiro para instruções do grupo 14
+align 4
+desa4f:	mov esi, grupo14
+	jmp aux4d
+
+
+; Rotina usada pelas instruções dos blocos 12, 13 e 14
+align 4
+desa50 :	mov dl,cl		; byte rm deve já estar em cl.
+	call rmmx		; imprime reg mmx, ref. à memória devem buscar...
+	mov dl, ','
+	or edx, [DP_CurrentColor]
+	call Imp_dl_gtexto
+	mov dl, [ebx]	; busca dado imediato
+	call imp_opcodehexg
+	inc ebx
+	call graph_bytehex	; imprime ib
+	ret
+
+
+;-----------------------------------------------fim---------------------------------------
+

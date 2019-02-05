@@ -1,0 +1,1848 @@
+; Código para rotina desassembladora versão 1.03 - 16/03/01 23:13;
+; (Código Intel #16)
+; Usa: FASM ASSEMBLER
+; Autor: Clovis Bombardelli
+
+;-----------------------------------------------------------------------------------------
+
+; Códigos indicados por "livre" posicionam cy=1
+; Códigos indicados por "vazio" não marcam carry flag. As instr terão sempre de 2 bytes
+
+
+; flags de ch
+;	#7 	0- end #16	1- end#32
+;	#6 	0- op #16		1- op#32
+;	#5	0- dado byte	1- dado word ou ddord
+;	#4	0-rm,r		1- r,rm
+;	#3														uso diverso, depende da instrução
+;	#2,1,0	000- sem prefixo,
+;	001- es:, 010- cs:, 011- ss:, 100- ds:, 101- fs:, 110- gs:, 111- não usado
+
+; Erros devem posicionar #0[dh]=1 para ser detectada na saida e posicionar cy=1
+; Instrução lock marca #2[dh]=1 para ser utilizado pelas demais instruções para verificar
+; a validade das mesmas.
+
+; Para testar este programa, foi desviado o inicio da entrada para teste, onde se fixa o
+; endereço do codigo a ser testado e o endereço para a escrita da instrução desassemblada.
+
+
+;-----------------------------------------------------------------------------------------
+
+; db 'desa1.3 jan01'
+align 4
+base_rotinas_ff:	; tabela de ponteiros das rotinas ff
+dd desa01	; Marca prefixo de tamanho de operando
+dd desa02	; Marca prefixo de tamanho de endereço
+dd desa03	; Marca prefixo de segmento es, cs, ss ou ds
+dd desa04	; Marca prefixo de segmento fs ou gs
+dd desa05	; Marca instrução com dois bytes, busca opcode na tabela seguinte
+dd desa06	; Escolhe e imprime ib ou iv em função de #0[cl]
+dd desa07	; Seleciona e imprime ib, iv em função de #5[ch]
+dd desa08	; Imprime ib
+dd desa09	; Escolhe e imprime iw ou id em função de #6[ch]
+dd desa0a	; Imprime iw
+dd desa0b	; Escolhe e imprime al ou axv em função de #0[cl]
+dd desa0c	; Diferencia [endereçamento direto] de [bp+deslocamento]
+dd desa0d	; Diferencia [endereçamento direto] de [ebp+deslocamento]
+dd desa0e	; Escolhe e imprime rv em função de #6[ch] e #0,1,2[cl]
+dd desa0f	; Escolhe e imprime ax ou eax
+dd desa10	; Escolhe e imprime rb em função de #0,1,2[cl]
+dd desa11	; Escolhe e Imprime condição
+dd desa12	; Imprime rd em função de #0,1,2[cl] (similar a desa0e, insensível ao pref. 66)
+dd desa13	; Busca byte rm e escolhe rmb / rmv ou rb / rv (memória ou registrador)
+dd desa14	; Busca byte sib
+dd desa15	; Imprime D, em função do prefixo 66
+dd desa16	; Imprime rmb ou rmv com prefixo de segmento + by, wo ou dd
+dd desa17	; Imprime prefixo de segmento em função #0,1,2[ch]
+dd desa18	; Imprime b, w ou d
+dd desa19	; Altera "si" para buscar uma das quatro : "cbw", "cwde", "cwd" ou "cdq"
+dd desa1a	; Imprime endereço relativo curto
+dd desa1b	; Imprime endereço relativo longo variável
+dd desa1c	; Imprime es, cs, ss ou ds
+dd desa1d	; Imprime fs ou gs
+dd desa1e	; Imprime cx ou ecx
+dd desa1f	; Imprime ne ou e
+dd desa20	; Imprime add, or, adc, sbb, and, sub, xor, cmp em função #3,4,5[cl]
+dd desa21	; Escolhe rv,rmv/rmv,rv ou rb,rmb/rmb,rb
+dd desa22	; Imprime 'mov' setando #5[ch] se #0[cl]=1
+dd desa23	; Imprime endereço direto em função #7[ch]
+dd desa24	; Busca byte rm e seleciona um dos nomes do grupo1 em função #3,4,5[byte rm]
+dd desa25	; Seleciona e imprime um dos nomes..rol, ror, rcl, rcr, shl, shr, sal, sar
+dd desa26	; Imprime aviso3: código de instrução não usado (usada pela rotina desa27)
+dd desa27	; Escolhe nome test, x, not, neg, mul, imul,...
+dd desa28	; Busca endereço far imediato
+dd desa29	; Busca deslocamento nos modos de endereçamento
+dd desa2a	; Executa rotina 21 com #5[ch]=1. Referencia à memoria tipo rv,rmv incondicional
+dd desa2b	; Busca byte rm e busca endereçamento à memoria (rv,m)
+dd desa2c	; Executa rotina 21 com #6[ch]=0. Usada pela instrução "arpl"
+dd desa2d	; Busca byte rm especifica para referencia a reg seg (rseg,rm ou rm,rseg)
+dd desa2e	; Rotina especifica para prefixos "rep", "repe" e "repne"
+dd desa2f	; Imprime #3,4,5[byte rm] como um numero entre 0 e 7
+dd desa30	; Rotina especifica para as instruções movsx e movzx
+dd desa31	; Busca byte rm para end tipo rmv,rv. marca #3[ch]=1 se #0[byte anterior]=1
+dd desa32	; Imprime ib ou cl em função de #3[cl]
+dd desa33	; Escolhe e imprime uma das letras: "s", "r" ou "c"
+dd desa34	; Escolhe e imprime uma das letras: "s", "r" ou "c", específica para grupo 8
+dd desa35	; Escolhe no grupo 0f00 ("ldtr", "str"....etc), em função de #3,4,5[byte rm]
+dd desa36	; Busca endereçamento rmw em função de #0,1,2[cl]
+dd desa37	; Busca end M em função de #0,1,2[cl]. O tam. do operando depende da instrução
+dd desa38	; Imprime "Instrução inválida"
+dd desa39	; Escolhe uma das funções do grupo 0f01, em função de #3,4,5 [byte rm]
+dd desa3a	; Imprime rmb ou rmv dependendo de #5[ch] (usada pelas instr do grupo 4 e 5)
+dd desa3b	; Busca byte rm e escolhe uma das instruções do grupo 5
+dd desa3c	; Imprime rmv (usada pela instrução push rmv do grupo 5)
+dd desa3d	; Imprime 'mov'
+dd desa3e	; Imprime 'pop'
+dd desa3f	; Imprime 'push'
+dd desa40	; Busca byte rm para instruções mpu (rotina principal)
+dd desa41	; Imprime "st0,stx" em função de #0,1,2[cl]
+dd desa42	; Imprime "stx,st0" em função de #0,1,2[cl]
+dd desa43	; Imprime stx em função de #0,1,2[cl]
+dd desa44	; Busca proximo byte e imprime "mov" posicionando #6[ch]=1
+dd desa45	; Marca erro posicionando #1[dh]=1
+dd desa46	; Marca #2[dh]=1 e continua. Rotina especifica para instrução lock
+dd desa47	; Busca byte rm para instruções dos grupos 12, 13 e 14
+dd desa48	; Busca byte rm e escolhe umas das instruções do grupo 4
+dd desa49	; Busca byte rm para instruções mmx (rmmx, rmmx/m64)
+dd desa4a	; Busca byte rm para instruções mmx reversas (rmmx/m64, rmmx)
+dd desa4b	; Busca byte rm para instrução movd (rmmx,r/m32)
+dd desa4c	; Busca byte rm para instrução movdr (r/m32,rmmx)
+dd desa4d	; Busca ponteiro para instruções do grupo 12
+dd desa4e	; Busca ponteiro para instruções do grupo 13
+dd desa4f	; Busca ponteiro para instruções do grupo 14
+dd desa50	; Rotina usada pelas instruções dos blocos 12, 13 e 14
+
+modo16:
+	dd m16.0
+	dd m16.1
+	dd m16.2
+	dd m16.3
+	dd m16.4
+	dd m16.5
+	dd m16.6
+	dd m16.7
+
+modo32:
+	dd m32.0
+	dd m32.1
+	dd m32.2
+	dd m32.3
+	dd m32.4
+	dd m32.5
+	dd m32.6
+	dd m32.7
+
+grupo4	dd _incx
+	dd _decx
+	dd livre
+	dd livre
+	dd livre
+	dd livre
+	dd livre
+grupo4.7	dd livre
+
+grupo5	dd _incx
+	dd _decx
+	dd _callx
+	dd _callfarx
+	dd _jmpx
+	dd _jmpfarx
+	dd _pusx
+grupo5.7	dd livre
+
+; IMPORTANTE: Os blocos 12, 13 e 14 devem ficar coesos entre si
+; Prever mais 3 blocos livres para as referencias à memória nestes 3 blocos. (ou pensar noutra solução)
+grupo12:	dd livre
+	dd livre
+	dd _psrlwi
+	dd livre
+	dd _psrawi
+	dd livre
+	dd _psllwi
+	dd livre
+
+grupo13	dd livre
+	dd livre
+	dd _psrldi
+	dd livre
+	dd _psradi
+	dd livre
+	dd _pslldi
+	dd livre
+
+grupo14	dd livre
+	dd livre
+	dd _psrlqi
+	dd livre
+	dd livre
+	dd livre
+	dd _psllqi
+	dd livre
+
+; times 0x180 - ( _ - __ ) db 0
+;----------------------------------------------------------------------------------------------------------------------------------------------
+
+;tabela de índices (aviso4= instrução indisponível)
+db 'BASE INDICE'
+align 16
+base_indices:
+dd _add		; 00- add rmb,rb
+dd _add		; 01- add rmv,rv
+dd _add		; 02- add rb,rmb
+dd _add		; 03- add rv,rmv
+dd _addi		; 04- add al,ib						; a mesma rotina serve para os códigos 04 e 05
+dd _addi		; 05- add axv,iv
+dd _pushs	 	; 06- push es
+dd _pops		; 07- pop es
+dd _add		; 08- or rmb,rb
+dd _add		; 09- or rmv,rv
+dd _add		; 0a- or rb,rmb
+dd _add		; 0b- or rv,rmv
+dd _addi		; 0c- or al,ib
+dd _addi		; 0d- or axv,iv
+dd _pushs		; 0e- push cs
+dd _of		; 0f- opcode 2 bytes
+
+dd _add		; 10- adc rmb,rb
+dd _add		; 11- adc rmv,rv
+dd _add		; 12- adc rb,rmb
+dd _add		; 13- adc rv,rmv
+dd _addi		; 14- adc al,ib
+dd _addi		; 15- adc axv,iv
+dd _pushs		; 16- push ss
+dd _pops		; 17- pop ss
+dd _add		; 18- sbb rmb,rb
+dd _add		; 19- sbb rmv,rv
+dd _add		; 1a- sbb rb,rmb
+dd _add		; 1b- sbb rv,rmv
+dd _addi		; 1c- sbb al,ib
+dd _addi		; 1d- sbb axv,iv
+dd _pushs		; 1e- push ds
+dd _pops	 	; 1f- pop ds
+
+dd _add		; 20- and rmb,rb
+dd _add		; 21- and rmv,rv
+dd _add		; 22- and rb,rmb
+dd _add		; 23- and rv,rmv
+dd _addi		; 24- and al,ib
+dd _addi		; 25- and axv,iv
+dd _rseg0		; 26- prefixo es
+dd _daa		; 27- daa								OK 30/01/01 9:57
+dd _add		; 28- sub rb,rmb
+dd _add		; 29- sub rv,rmv
+dd _add		; 2a- sub rmb,rb
+dd _add		; 2b- sub rmv,rv
+dd _addi		; 2c- sub al,ib
+dd _addi		; 2d- sub axv, iv
+dd _rseg0		; 2e- prefixo cs
+dd _das		; 2f- das 								OK 30/01/01 9:57
+
+dd _add		; 30- xor rmb,rb
+dd _add		; 31- xor rmv,rv
+dd _add		; 32- xor rb,rmb
+dd _add		; 33- xor rv,rmv
+dd _addi		; 34- xor al,ib
+dd _addi		; 35- xor axv,iv
+dd _rseg0		; 36- prefixo ss
+dd _aaa		; 37- aaa								OK 22/01/01 3:12
+dd _add		; 38- cmp rmb,rb
+dd _add		; 39- cmp rmv,rv
+dd _add		; 3a- cmp rb,rmb
+dd _add		; 3b- cmp rv,rmv
+dd _addi		; 3c- cmp al,1b
+dd _addi		; 3d- cmp axv,iv
+dd _rseg0		; 3e- prefixo ds
+dd _aas		; 3f- aas								OK 22/01/01 3:12
+
+dd _inc		; 40- inc axv							OK
+dd _inc		; 41- inc cxv							OK
+dd _inc		; 42- inc dxv
+dd _inc		; 43- inc bxv
+dd _inc		; 44- inc spv
+dd _inc		; 45- inc bpv
+dd _inc		; 46- inc siv
+dd _inc		; 47- inc div
+dd _dec		; 48- dec axv							OK
+dd _dec		; 49- dec cxv
+dd _dec		; 4a- dec dxv
+dd _dec		; 4b- dec bxv
+dd _dec		; 4c- dec spv
+dd _dec		; 4d- dec bpv
+dd _dec		; 4e- dec siv
+dd _dec		; 4f- dec div
+
+dd _pushr		; 50- push axv
+dd _pushr		; 51- push cxv
+dd _pushr		; 52- push dxv
+dd _pushr		; 53- push bxv
+dd _pushr		; 54- push spv
+dd _pushr		; 55- push bpv
+dd _pushr		; 56- push siv
+dd _pushr		; 57- push div
+dd _popr		; 58- pop axv
+dd _popr		; 59- pop cxv
+dd _popr		; 5a- pop dxv
+dd _popr		; 5b- pop bxv
+dd _popr		; 5c- pop spv
+dd _popr		; 5d- pop bpv
+dd _popr		; 5e- pop siv
+dd _popr		; 5f- pop div
+
+dd _pusha		; 60- pushav
+dd _popa		; 61- popav
+dd _bound		; 62- bound rv,m2v
+dd _arpl		; 63- afpl mw,rw
+dd _rseg1		; 64- prefixo fs
+dd _rseg1		; 65- prefixo gs
+dd _o32		; 66- prefixo de tamanho de operando
+dd _a32		; 67- prefixo de tamanho de endereçamento
+dd _pushiv	; 68- push iv
+dd _imulv		; 69- imul rv,rmv,iv
+dd _pushib	; 6a- push ib
+dd _imulb		; 6b- imul rv,rmv,ib
+dd _ins		; 6c- insb
+dd _ins		; 6d- insv
+dd _outs		; 6e- outsb
+dd _outs		; 6f- outsv
+
+dd _jcc		; 70- jo short							OK 23/01/01 15:05 (usa prefixo 66 para a32)
+dd _jcc		; 71- jno short
+dd _jcc		; 72- jb short							OK 23/01/01 15:05
+dd _jcc		; 73- jae short
+dd _jcc		; 74- je short
+dd _jcc		; 75- jne short
+dd _jcc		; 76- jbe short
+dd _jcc		; 77- ja short
+dd _jcc		; 78- js short
+dd _jcc		; 79- jns short
+dd _jcc		; 7a- jpe short
+dd _jcc		; 7b- jpo short
+dd _jcc		; 7c- jl short
+dd _jcc		; 7d- jge short
+dd _jcc		; 7e- jle short
+dd _jcc		; 7f- jg short
+
+dd _imebb		; 80- grupo 1 - imediato rmb,ib
+dd _imebb		; 81- grupo 1 - imediato rmb,iv
+dd _imebb		; 82- grupo 1 - não usado
+dd _imebv		; 83- grupo 1 - imediato rmv,ib
+dd _testr		; 84- test rmb,rb
+dd _testr		; 85- test rmv,rv
+dd _xchgr		; 86- xchg rmb,rb
+dd _xchgr		; 87- xchg rmv,rv
+dd _movmr		; 88- mov rmb,rb
+dd _movmr		; 89- mov rmv,rv
+dd _movmr		; 8a- mov rmb,ib
+dd _movmr		; 8b- mov rmv,iv
+dd _movsm		; 8c- mov rmw, segr
+dd _lea		; 8d- lea rv,m
+dd _movsm		; 8e- mov segr,mw
+dd _poprm		; 8f- pop rmv
+
+dd _nop		; 90- xchg eav,eav/nop	OK 22/01/01 3:10
+dd _xchg	 	; 91- xchg eav,ecv
+dd _xchg	 	; 92- xchg eav,edv
+dd _xchg	 	; 93- xchg eav,ebv
+dd _xchg	 	; 94- xchg eav,spv
+dd _xchg	 	; 95- xchg eav,bpv
+dd _xchg	 	; 96- xchg eav,siv
+dd _xchg	 	; 97- xchg eav,div
+dd _cbwm		; 98- cbw/cwde
+dd _cbwm		; 99- cwd/cdq
+dd _calli		; 9a- call far direta
+dd _fwait		; 9b- fwait							OK 22/01/01 3:32
+dd _pushf		; 9c- pushfv
+dd _popf		; 9d- popfv
+dd _sahf		; 9e- sahf							OK 22/01/01 3:31
+dd _lahf		; 9f- lahf								OK 22/01/01 3:32
+
+dd _movi		; a0- mov al,xb
+dd _movi	 	; a1- mov axv,xv
+dd _mova		; a2- mov xb,al
+dd _mova		; a3- mov xv,axv
+dd _movs		; a4- movsb
+dd _movs		; a5- movsv
+dd _cmps		; a6- cmpsb
+dd _cmps		; a7- cmpsv
+dd _testi		; a8- test al,ib
+dd _testi		; a9- test axv,iv
+dd _stos		; aa- stosb
+dd _stos		; ab- stosv
+dd _lods		; ac- lodsb
+dd _lods		; ad- lodsv
+dd _scas		; ae- scasb
+dd _scas		; af- scasv
+
+dd _movrb		; b0- mov al,ib
+dd _movrb		; b1- mov cl,ib
+dd _movrb		; b2- mov dl,ib
+dd _movrb		; b3- mov bl,1b
+dd _movrb		; b4- mov ah,ib
+dd _movrb		; b5- mov ch,ib
+dd _movrb		; b6- mov dh,ib
+dd _movrb		; b7- mov bh,ib
+dd _movrv		; b8- mov axv,iv
+dd _movrv		; b9- mov cxv,iv
+dd _movrv		; ba- mov dxv,iv
+dd _movrv		; bb- mov bxv,iv
+dd _movrv		; bc- mov spv,iv
+dd _movrv		; bd- mov bpv,iv
+dd _movrv		; be- mov siv,iv
+dd _movrv		; bf- mov div,iv
+
+dd _deslib	; c0- grupo 2 - desloc rmb,ib
+dd _deslib	; c1- grupo 2 - desloc rmv,ib
+dd _retiw		; c2- ret iw							OK 23/01/01 10:10
+dd _ret		; c3- ret (near)		OK 22/01/01 3:33
+dd _les		; c4- les rv,mp
+dd _lds		; c5- lds rv,mp
+dd _movmi		; c6- grupo 11 - mov rmb,ib
+dd _movmi		; c7- grupo 11 - mov rmv,iv
+dd _enter		; c8- enter iw,ib
+dd _leave		; c9- leave							OK 23/01/01 10:10
+dd _retfiw	; ca- retf iw
+dd _retf		; cb- retf
+dd _int3		; cc- int3								OK 23/01/01 10:09
+dd _intib		; cd- int ib							OK 23/01/01 10:09
+dd _into		; ce- into								OK 23/01/01 10:10
+dd _iret		; cf- iretv
+
+dd _desl1		; d0- grupo 2 - desloc rmb,1
+dd _desl1		; d1- grupo 2 - desloc rmv,1
+dd _deslcl	; d2- grupo 2 - desloc rmb,cl
+dd _deslcl	; d3- grupo 2 - desloc rmv,cl
+dd _aam		; d4- aam (ib)
+dd _aad		; d5- aad (ib)
+dd _salc		; d6- set al from carry flag,									 não documentada
+dd _xlatb		; d7- xlatb
+dd mpu		; d8- instrução mpu
+dd mpu		; d9- instrução mpu
+dd mpu		; da- instrução mpu
+dd mpu		; db- instrução mpu
+dd mpu		; dc- instrução mpu
+dd mpu		; dd- instrução mpu
+dd mpu		; de- instrução mpu
+dd mpu		; df- instrução mpu
+
+dd _loopc		; e0- loopne short
+dd _loopc		; e1- loope short
+dd _loop		; e2- loop short
+dd _jcxz		; e3- jcxv short
+dd _in		; e4- in al,ib
+dd _in		; e5- in axv,ib
+dd _out		; e6- out al,ib
+dd _out		; e7- out axv,ib
+dd _call		; e8- call near
+dd _jmp		; e9- jmp near
+dd _jmpf		; ea- jmp far
+dd _jmps		; eb- jmp short
+dd _indx		; ec- in al,dx
+dd _indx		; ed- in axv,dx
+dd _outdx		; ee- out al,dx
+dd _outdx		; ef- out axv,dx
+
+dd _lock	 	; f0- prefixo lock
+dd _int1		; f1- int1 (P6)
+dd _rep		; f2- prefixo repne
+dd _rep		; f3- prefixo repe/rep
+dd _hlt		; f4- hlt
+dd _cmc		; f5- cmc
+dd _una		; f6- grupo 3 - unário mb
+dd _una		; f7- grupo 3 - unário mv
+dd _clc		; f8- clc
+dd _stc		; f9- stc
+dd _cli		; fa- cli
+dd _sti		; fb- sti
+dd _cld		; fc- cld
+dd _std		; fd- std
+dd _indfe		; fe- grupo 4 - inc/dec rmb
+dd _indff		; ff- grupo 5 - indireto
+
+; tabela do segundo byte
+dd _i0f00		; 0f 00- grupo 6 - instruções 0f 00
+dd _i0f01		; 0f 01- grupo 7 - instruções 0f 01
+dd _lar		; 0f 02- lar rv,rmv
+dd _lsl		; 0f 03- lsl rv, rmv
+dd livre		; 0f 04- *
+dd _load286	; 0f 05- loadall286		(286, não doc)
+dd _clts		; 0f 06- clts
+dd _loadall	; 0f 07- loadall		(386, não doc)
+dd _invd		; 0f 08- invd												(486)
+dd _wbinvd	; 0f 09- wbinvd											(486)
+dd livre		; 0f 0a- *
+dd aviso4		; 0f 0b-
+dd aviso4		; 0f 0c-
+dd aviso4		; 0f 0d-
+dd aviso4		; 0f 0e-
+dd aviso4		; 0f 0f-
+
+dd _umov		; 0f 10- umov rmb,rb	(386, não doc)
+dd _umov		; 0f 11- umov rmv,rv	(386, não doc)
+dd _umov		; 0f 12- umov rb,rmb	(386, não doc)
+dd _umov		; 0f 13- umov rv,rmv	(386, não doc)
+dd aviso4		; 0f 14-
+dd aviso4		; 0f 15-
+dd aviso4		; 0f 16-
+dd aviso4		; 0f 17-
+dd aviso4		; 0f 18- grupo 16 -
+dd livre		; 0f 19- *
+dd livre		; 0f 1a- *
+dd livre		; 0f 1b- *
+dd livre		; 0f 1c- *
+dd livre		; 0f 1d- *
+dd livre		; 0f 1e- *
+dd livre		; 0f 1f- *
+
+dd _crr		; 0f 20- mov rd,crn
+dd _drr		; 0f 21- mov rd,drn
+dd _cr		; 0f 22- mov crn,rd
+dd _dr		; 0f 23- mov drn,rd
+dd _trr		; 0f 24- mov rd,trn
+dd livre		; 0f 25- *
+dd _tr		; 0f 26- mov trn,rd
+dd livre		; 0f 27- *
+dd aviso4		; 0f 28-
+dd aviso4		; 0f 29-
+dd aviso4		; 0f 2a-
+dd aviso4		; 0f 2b-
+dd aviso4		; 0f 2c-
+dd aviso4		; 0f 2d-
+dd aviso4		; 0f 2e-
+dd aviso4		; 0f 2f-
+
+dd _wrmsr		; 0f 30- wrmsr													(p5)
+dd _rdtsc		; 0f 31- rdtsc														(p5)
+dd _rdmsr		; 0f 32- rdmsr														(p5)
+dd _rdpmc		; 0f 33- rdpmc													(p6)
+dd aviso4		; 0f 34-
+dd aviso4		; 0f 35-
+dd livre		; 0f 36- *
+dd livre		; 0f 37- *
+dd livre		; 0f 38- *
+dd livre		; 0f 39- *
+dd livre		; 0f 3a- *
+dd livre		; 0f 3b- *
+dd livre		; 0f 3c- *
+dd livre		; 0f 3d- *
+dd livre		; 0f 3e- *
+dd livre		; 0f 3f- *
+
+dd _cmov		; 0f 40- cmovo rv,rmv												(p6)
+dd _cmov		; 0f 41- cmovno rv,rmv												(p6)
+dd _cmov		; 0f 42- cmovb rv,rmv												(p6)
+dd _cmov		; 0f 43- cmovae rv,rmv												(p6)
+dd _cmov		; 0f 44- cmove rv,rmv												(p6)
+dd _cmov		; 0f 45- cmovne rv,rmv												(p6)
+dd _cmov		; 0f 46- cmovbe rv,rmv												(p6)
+dd _cmov		; 0f 47- cmova rv,rmv												(p6)
+dd _cmov		; 0f 48- cmovs rv,rmv												(p6)
+dd _cmov		; 0f 49- cmovns rv,rmv												(p6)
+dd _cmov		; 0f 4a- cmovpe rv,rmv												(p6)
+dd _cmov		; 0f 4b- cmovpo rv,rmv												(p6)
+dd _cmov		; 0f 4c- cmovl rv,rmv												(p6)
+dd _cmov		; 0f 4d- cmovge rv,rmv												(p6)
+dd _cmov		; 0f 4e- cmovle rv,rmv												(p6)
+dd _cmov		; 0f 4f- cmovg rv,rmv												(p6)
+
+dd aviso4		; 0f 50- paveb mmxreg,r/m64								(mmx cyryx somente)
+dd aviso4		; 0f 51- paddsiw mmxreg,r/m64 								(mmx cyrix somente)
+dd aviso4		; 0f 52- pmagw mmxreg,r/m64 								(mmx cyrix somente)
+dd aviso4		; 0f 53-
+dd aviso4		; 0f 54- pdistib mmxreg,mem64								(mmx cyrix somente)
+dd aviso4		; 0f 55- psubsiw mmxreg,r/m64								(mmx cyrix somente)
+dd aviso4		; 0f 56-
+dd aviso4		; 0f 57-
+dd aviso4		; 0f 58- pmvzb mmxreg,mem64								(mmx cyrix somente)
+dd aviso4		; 0f 59- pmulhrw mmxreg,r/m64								(mmx cyrix somente)
+dd aviso4		; 0f 5a- pmvnzb mmxreg,mem64								(mmx cyrix somente)
+dd aviso4		; 0f 5b- pmvlzb mmxreg,mem64								(mmx cyrix somente)
+dd aviso4		; 0f 5c- pmvgezb mmxreg,mem64	 						(mmx cyrix somente)
+dd aviso4		; 0f 5d- pmulhriw mmxreg,r/m64							(mmx cyrix somente)
+dd aviso4		; 0f 5e- pmachriw mmxreg,mem64							(mmx cyrix somente)
+dd aviso4		; 0f 5f-
+
+dd _punpcklbw	; 0f 60- punpcklbw mmxreg,r/m64									(p5, mmx)
+dd _punpcklwd	; 0f 61- punpcklwd mmxreg,r/m64									(p5, mmx)
+dd _punpckldq	; 0f 62- punpckldq mmxreg,r/m64									(p5, mmx)
+dd _packsswb	; 0f 63- packsswb mmxreg,r/m64									(p5, mmx)
+dd _pcmpgtb	; 0f 64- pcmpgtb mmxreg,r/m64										(p5, mmx)
+dd _pcmpgtw	; 0f 65- pcmpgtw mmxreg,r/m64										(p5, mmx)
+dd _pcmpgtd	; 0f 66- pcmpgtd mmxreg,r/m64										(p5, mmx)
+dd _packuswb	; 0f 67- packuswb mmxreg,r/m64									(p5, mmx)
+dd _punpckhbw	; 0f 68- punpckhbw mmxreg,r/m64									(p5, mmx)
+dd _punpckhwd	; 0f 69- punpckhwd mmxreg,r/m64	 								(p5, mmx)
+dd _punpckhdq	; 0f 6a- punpckhdq mmxreg,r/m64									(p5, mmx)
+dd _packssdd	; 0f 6b- packssdd mmxreg,r/m64									(p5, mmx)
+dd livre		; 0f 6c- *
+dd livre		; 0f 6d- *
+dd _movd		; 0f 6e- movd mmxreg,r/m32										(p5, mmx)
+dd _movq		; 0f 6f- movq mmxreg,r/m64										(p5, mmx)
+
+dd aviso4		; 0f 70-
+dd _gr121314	; 0f 71- grupo 12 -
+dd _gr121314	; 0f 72- grupo 13 -
+dd _gr121314	; 0f 73- grupo 14 - instruções de shift
+dd _pcmpeqb	; 0f 74- pcmpeqb mmxreg,r/m64										(p5, mmx)
+dd _pcmpeqw	; 0f 75- pcmpeqw mmxreg,r/m64										(p5, mmx)
+dd _pcmpeqd	; 0f 76- pcmpeqd mmxreg,r/m64										(p5, mmx)
+dd _emms		; 0f 77- emms														(p5, mmx)
+dd aviso4		; 0f 78-
+dd aviso4		; 0f 79-
+dd aviso4		; 0f 7a-
+dd aviso4		; 0f 7b-
+dd aviso4		; 0f 7c-
+dd aviso4		; 0f 7d-
+dd _movdr		; 0f 7e- movd r/m32,mmxreg											(p5, mmx)
+dd _movqr		; 0f 7f- movq r/m64,mmxreg											(p5, mmx)
+
+dd _jccnear	; 0f 80- jo near
+dd _jccnear	; 0f 81- jno near
+dd _jccnear	; 0f 82- jb near
+dd _jccnear	; 0f 83- jae near
+dd _jccnear	; 0f 84- je near
+dd _jccnear	; 0f 85- jne near
+dd _jccnear	; 0f 86- jbe near
+dd _jccnear	; 0f 87- ja near
+dd _jccnear	; 0f 88- js near
+dd _jccnear	; 0f 89- jns near
+dd _jccnear	; 0f 8a- jpe near
+dd _jccnear	; 0f 8b- jpo near
+dd _jccnear	; 0f 8c- jl near
+dd _jccnear	; 0f 8d- jge near
+dd _jccnear	; 0f 8e- jle near
+dd _jccnear	; 0f 8f- jg near
+
+dd _set		; 0f 90- seto rmb
+dd _set		; 0f 91- setno rmb
+dd _set		; 0f 92- setb rmb
+dd _set		; 0f 93- setae rmb
+dd _set		; 0f 94- sete rmb
+dd _set		; 0f 95- setne rmb
+dd _set		; 0f 96- setbe rmb
+dd _set		; 0f 97- seta rmb
+dd _set		; 0f 98- sets rmb
+dd _set		; 0f 99- setns rmb
+dd _set		; 0f 9a- setpe rmb
+dd _set		; 0f 9b- setpo rmb
+dd _set		; 0f 9c- setl rmb
+dd _set		; 0f 9d- setge rmb
+dd _set		; 0f 9e- setle rmb
+dd _set		; 0f 9f- setg rmb
+
+dd _pushfs	; 0f a0- push fs
+dd _popfs		; 0f a1- pop fs
+dd _cpuid		; 0f a2- cpuid														(p5)
+dd _bt		; 0f a3- bt rm, rv
+dd _shld		; 0f a4- shld rmv,rv, ib
+dd _shld		; 0f a5- shld rmv,rv, cl
+dd _cmpxchg486	; 0f a6- cmpxchg486 rmb,rb									(486, não doc)
+dd _cmpxchg486	; 0f a7- cmpxchg486 rmv,rv									(486, não doc)
+dd _pushfs	; 0f a8- push gs
+dd _popfs		; 0f a9- pop gs
+dd _rsm		; 0f aa- rsm														(p5)
+dd _bt		; 0f ab- bts rm, rv
+dd _shrd		; 0f ac- shrd rmv,rv,ib
+dd _shrd		; 0f ad- shrd rmv,rv,cl
+dd aviso4		; 0f ae- grupo 15 -
+dd _imul		; 0f af- imul rv,rmv
+
+dd _cmpxchg	; 0f b0- cmpxchg rmb,rb											(p5)
+dd _cmpxchg	; 0f b1- cmpxchg rmv,rv											(p5)
+dd _lss		; 0f b2- lss rv,mp
+dd _bt		; 0f b3- btr rm, rv
+dd _lfs		; 0f b4- lfs rv,mp
+dd _lgs		; 0f b5- lgs rv,mp
+dd _movzx		; 0f b6- movzx rv,rmb
+dd _movzx		; 0f b7- movzx rd,rmw
+dd aviso4		; 0f b8-
+dd aviso4		; 0f b9-
+dd _bti		; 0f ba- grupo 8 - bloco de instruções btx rv/m,ib
+dd _bt		; 0f bb- btc rm,rv
+dd _bsf		; 0f bc- bsf rv,rmv
+dd _bsr		; 0f bd- bsr rv,rmv
+dd _movsx		; 0f be- movsx rv,rmb
+dd _movsx		; 0f bd- movsx rd,rmw
+
+dd _xadd		; 0f c0- xadd rmb,rb										(486)
+dd _xadd		; 0f c1- xadd rmv,rv										(486)
+dd aviso4		; 0f c2-
+dd livre		; 0f c3- *
+dd aviso4		; 0f c4-
+dd aviso4		; 0f c5-
+dd aviso4		; 0f c6-
+dd aviso4		; 0f c7- grupo 9 - cmpxchgg8b mem									(p5)
+dd _bswap		; 0f c8- bswap eax											(486)
+dd _bswap		; 0f c9- bswap ecx											(486)
+dd _bswap		; 0f ca- bswap edx											(486)
+dd _bswap		; 0f cb- bswap ebx										(486)
+dd _bswap		; 0f cc- bswap esp										(486)
+dd _bswap		; 0f cd- bswap ebp										(486)
+dd _bswap		; 0f ce- bswap esi											(486)
+dd _bswap		; 0f cf- bswap edi											(486)
+
+dd livre		; 0f d0- *
+dd _psrlw		; 0f d1- psrlw mmxreg,r/m64										(p5, mmx)
+dd _psrld		; 0f d2- psrld mmxreg,r/m64											(p5, mmx)
+dd _psrlq		; 0f d3- psrlq mmxreg,r/m64											(p5, mmx)
+dd livre		; 0f d4- *
+dd _pmullw	; 0f d5- pmullw mmxreg,r/m64										(p5, mmx)
+dd livre		; 0f d6- *
+dd aviso4		; 0f d7-
+dd _psubusb	; 0f d8- psubusb mmxreg,r/m64										(p5, mmx)
+dd _psubusw	; 0f d9- psubusw mmxreg,r/m64										(p5, mmx)
+dd aviso4		; 0f da-
+dd _pand		; 0f db- pand mmxreg,r/m64											(p5, mmx)
+dd _paddusb	; 0f dc- paddusb mmxreg,r/m64										(p5, mmx)
+dd _paddusw	; 0f dd- paddusw mmxreg,r/m64										(p5, mmx)
+dd aviso4		; 0f de-
+dd _pandn		; 0f df- pandn mmxreg,r/m64										(p5, mmx)
+
+dd aviso4		; 0f e0-
+dd _psraw		; 0f e1- psraw mmxreg,r/m64										(p5, mmx)
+dd _psrad		; 0f e2- psrad mmxreg,r/m64										(p5, mmx)
+dd aviso4		; 0f e3-
+dd aviso4		; 0f e4-
+dd _pmulhw	; 0f e5- pmulhw mmxreg,r/m64										(p5, mmx)
+dd livre		; 0f e6- *
+dd aviso4		; 0f e7-
+dd _psubsb	; 0f e8- psubsb mmxreg,r/m64										(p5, mmx)
+dd _psubsw	; 0f e9- psubsw mmxreg,r/m64										(p5, mmx)
+dd aviso4		; 0f ea-
+dd _por		; 0f eb- por mmxreg,r/m64											(p5, mmx)
+dd _paddsb	; 0f ec- paddsb mmxreg,r/m64										(p5, mmx)
+dd _paddsw	; 0f ed- paddsw mmxreg,r/m64										(p5, mmx)
+dd aviso4		; 0f ee-
+dd _pxor		; 0f ef- pxor mmxreg,r/m64											(p5, mmx)
+
+dd livre		; 0f f0- *
+dd _psllw		; 0f f1- psllw mmxreg,r/m64											(p5, mmx)
+dd _pslld		; 0f f2- pslld mmxreg,r/m64											(p5, mmx)
+dd _psllq		; 0f f3- psllq mmxreg,r/m64											(p5, mmx)
+dd livre		; 0f f4- *
+dd _pmadddd	; 0f f5- pmadddd mmxreg,r/m64										(p5, mmx)
+dd aviso4		; 0f f6-
+dd aviso4		; 0f f7-
+dd _psubb	 	; 0f f8- psubb mmxreg,r/m64										(p5, mmx)
+dd _psubw		; 0f f9- psubw mmxreg,r/m64										(p5, mmx)
+dd _psubd	 	; 0f fa- psubd mmxreg,r/m64										(p5, mmx)
+dd livre		; 0f fb- *
+dd _paddb		; 0f bc- paddb mmxreg,r/m64										(p5, mmx)
+dd _paddd		; 0f fd- paddd mmxreg,r/m64										(p5, mmx)
+dd _paddd		; 0f fe- paddd mmxreg,r/m64										(p5, mmx)
+dd livre		; 0f ff- *
+
+; * = código de instrução não usado
+
+; tabela A (pfu) para byte rm entre 00 e bf (reservado 128 bytes, 80h)
+R_d8		dd _fadd_single_real
+		dd _fmul_single_real
+		dd _fcom_single_real
+		dd _fcomp_single_real
+		dd _fsub_single_real
+		dd _fsubr_single_real
+		dd _fdiv_single_real
+		dd _fdivr_single_real
+
+R_d9		dd _fld_single_real
+		dd vazio
+		dd _fst_single_real
+		dd _fstp_single_real
+		dd _fldenv
+		dd _fldcw_2bytes
+		dd _fstenv
+		dd _fstcw_2bytes
+
+R_da		dd _fiadd_dd_Int
+		dd _fimul_dd_Int
+		dd _ficom_dd_Int
+		dd _ficomp_dd_Int
+		dd fisub_dd_Int
+		dd fisubr_dd_Int
+		dd fidiv_dd_Int
+		dd fidivr_dd_Int
+
+R_db		dd fild_dd_Int
+		dd vazio
+		dd fist_dd_Int
+		dd fistp_dd_Int
+		dd vazio
+		dd fld_ext_real
+		dd vazio
+		dd fstp_ext_real
+
+R_dc		dd _fadd_doble_real
+		dd _fmul_doble_real
+		dd _fcom_doble_real
+		dd _fcomp_doble_real
+		dd _fsub_doble_real
+		dd _fsubr_doble_real
+		dd _fdiv_doble_real
+		dd _fdivr_doble_real
+
+R_dd		dd _fld_doble_real
+		dd vazio
+		dd _fst_doble_real
+		dd _fstp_doble_real
+		dd _frstor
+		dd vazio
+		dd _fsave
+		dd _fstsw
+
+R_de		dd _fiadd_wo_Int
+		dd _fimul_wo_Int
+		dd _ficom_wo_Int
+		dd _ficomp_wo_Int
+		dd _fisub_wo_Int
+		dd _fisubr_wo_Int
+		dd _fidiv_wo_Int
+		dd _fidivr_wo_Int
+
+R_df		dd _fild_wo_Int
+		dd vazio
+		dd _fist_wo_Int
+		dd _fistp_wo_Int
+		dd _fbld_pack_bcd
+		dd _fild_qw_Int
+		dd _fbstp_pack_bcd
+		dd _fistp_qw_Int
+
+; tabela B (fpu) para byte rm entre c0 e ff (reservado 512 bytes, 400h)
+R_d8.c0	dd _fadd_sti
+	dd _fadd_sti
+	dd _fadd_sti
+	dd _fadd_sti
+	dd _fadd_sti
+	dd _fadd_sti
+	dd _fadd_sti
+	dd _fadd_sti
+
+R_d8.c8	dd _fmul_sti
+	dd _fmul_sti
+	dd _fmul_sti
+	dd _fmul_sti
+	dd _fmul_sti
+	dd _fmul_sti
+	dd _fmul_sti
+	dd _fmul_sti
+
+R_d8.d0	dd _fcom_sti
+	dd _fcom_sti
+	dd _fcom_sti
+	dd _fcom_sti
+	dd _fcom_sti
+	dd _fcom_sti
+	dd _fcom_sti
+	dd _fcom_sti
+
+R_d8.d8	dd _fcomp_sti
+	dd _fcomp_sti
+	dd _fcomp_sti
+	dd _fcomp_sti
+	dd _fcomp_sti
+	dd _fcomp_sti
+	dd _fcomp_sti
+	dd _fcomp_sti
+
+R_d8.e0	dd _fsub_sti
+	dd _fsub_sti
+	dd _fsub_sti
+	dd _fsub_sti
+	dd _fsub_sti
+	dd _fsub_sti
+	dd _fsub_sti
+	dd _fsub_sti
+
+R_d8.e8	dd _fsubr_sti
+	dd _fsubr_sti
+	dd _fsubr_sti
+	dd _fsubr_sti
+	dd _fsubr_sti
+	dd _fsubr_sti
+	dd _fsubr_sti
+	dd _fsubr_sti
+
+R_d8.f0	dd _fdiv_sti
+	dd _fdiv_sti
+	dd _fdiv_sti
+	dd _fdiv_sti
+	dd _fdiv_sti
+	dd _fdiv_sti
+	dd _fdiv_sti
+	dd _fdiv_sti
+
+R_d8.f8	dd _fdivr_sti
+	dd _fdivr_sti
+	dd _fdivr_sti
+	dd _fdivr_sti
+	dd _fdivr_sti
+	dd _fdivr_sti
+	dd _fdivr_sti
+	dd _fdivr_sti
+
+_d9.c0	dd _fld_sti
+	dd _fld_sti
+	dd _fld_sti
+	dd _fld_sti
+	dd _fld_sti
+	dd _fld_sti
+	dd _fld_sti
+	dd _fld_sti
+
+_d9.c8	dd _fxch_sti
+	dd _fxch_sti
+	dd _fxch_sti
+	dd _fxch_sti
+	dd _fxch_sti
+	dd _fxch_sti
+	dd _fxch_sti
+	dd _fxch_sti
+
+_d9.d0	dd _fnop
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+
+_d9.d8	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+
+_d9.e0	dd _fchs
+	dd _fabs
+	dd vazio
+	dd vazio
+	dd _ftst
+	dd _fxam
+	dd vazio
+	dd vazio
+
+_d9.e8	dd _fld1
+	dd _fldl2t
+	dd _fldl2e
+	dd _fldpi
+	dd _fldlg2
+	dd _fldln2
+	dd _fldz
+	dd vazio
+
+_d9.f0	dd _f2xm1
+	dd _fyl2x
+	dd _fptan
+	dd _fpatan
+	dd _fxtract
+	dd _fprem1
+	dd _fdecstp
+	dd _fincstp
+
+_d9.f8	dd _fprem
+	dd _fyl2xp1
+	dd _fsqrt
+	dd _fsincos
+	dd _frndint
+	dd _scale
+	dd _fsin
+	dd _fcos
+
+_da.c0	dd _fcmovb_sti
+	dd _fcmovb_sti
+	dd _fcmovb_sti
+	dd _fcmovb_sti
+	dd _fcmovb_sti
+	dd _fcmovb_sti
+	dd _fcmovb_sti
+	dd _fcmovb_sti
+
+_da.c8	dd _fcmove_sti
+	dd _fcmove_sti
+	dd _fcmove_sti
+	dd _fcmove_sti
+	dd _fcmove_sti
+	dd _fcmove_sti
+	dd _fcmove_sti
+	dd _fcmove_sti
+
+_da.d0	dd _fcmovbe_sti
+	dd _fcmovbe_sti
+	dd _fcmovbe_sti
+	dd _fcmovbe_sti
+	dd _fcmovbe_sti
+	dd _fcmovbe_sti
+	dd _fcmovbe_sti
+	dd _fcmovbe_sti
+
+_da.d8	dd _fcmovu_sti
+	dd _fcmovu_sti
+	dd _fcmovu_sti
+	dd _fcmovu_sti
+	dd _fcmovu_sti
+	dd _fcmovu_sti
+	dd _fcmovu_sti
+	dd _fcmovu_sti
+
+_da.e0	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+
+_da.e8	dd _fucompp
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+
+_da.f0	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+
+_da.f8	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+
+_db.c0	dd _fcmovnb_sti
+	dd _fcmovnb_sti
+	dd _fcmovnb_sti
+	dd _fcmovnb_sti
+	dd _fcmovnb_sti
+	dd _fcmovnb_sti
+	dd _fcmovnb_sti
+	dd _fcmovnb_sti
+
+_db.c8	dd _fcmovne_sti
+	dd _fcmovne_sti
+	dd _fcmovne_sti
+	dd _fcmovne_sti
+	dd _fcmovne_sti
+	dd _fcmovne_sti
+	dd _fcmovne_sti
+	dd _fcmovne_sti
+
+_db.d0	dd _fcmovnbe_sti
+	dd _fcmovnbe_sti
+	dd _fcmovnbe_sti
+	dd _fcmovnbe_sti
+	dd _fcmovnbe_sti
+	dd _fcmovnbe_sti
+	dd _fcmovnbe_sti
+	dd _fcmovnbe_sti
+
+_db.d8	dd _fcmovnu_sti
+	dd _fcmovnu_sti
+	dd _fcmovnu_sti
+	dd _fcmovnu_sti
+	dd _fcmovnu_sti
+	dd _fcmovnu_sti
+	dd _fcmovnu_sti
+	dd _fcmovnu_sti
+
+_db.e0	dd vazio
+	dd vazio
+	dd _fclex
+	dd _finit
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+
+_db.e8	dd _fucomi_sti
+	dd _fucomi_sti
+	dd _fucomi_sti
+	dd _fucomi_sti
+	dd _fucomi_sti
+	dd _fucomi_sti
+	dd _fucomi_sti
+	dd _fucomi_sti
+
+_db.f0	dd _fcomi_sti
+	dd _fcomi_sti
+	dd _fcomi_sti
+	dd _fcomi_sti
+	dd _fcomi_sti
+	dd _fcomi_sti
+	dd _fcomi_sti
+	dd _fcomi_sti
+
+_db.f8	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+
+_dc.c0	dd _fadd_st0
+	dd _fadd_st0
+	dd _fadd_st0
+	dd _fadd_st0
+	dd _fadd_st0
+	dd _fadd_st0
+	dd _fadd_st0
+	dd _fadd_st0
+
+_dc.c8	dd _fmul_st0
+	dd _fmul_st0
+	dd _fmul_st0
+	dd _fmul_st0
+	dd _fmul_st0
+	dd _fmul_st0
+	dd _fmul_st0
+	dd _fmul_st0
+
+_dc.d0	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+
+_dc.d8	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+
+_dc.e0	dd _fsubr_st0
+	dd _fsubr_st0
+	dd _fsubr_st0
+	dd _fsubr_st0
+	dd _fsubr_st0
+	dd _fsubr_st0
+	dd _fsubr_st0
+	dd _fsubr_st0
+
+_dc.e8	dd _fsub_st0
+	dd _fsub_st0
+	dd _fsub_st0
+	dd _fsub_st0
+	dd _fsub_st0
+	dd _fsub_st0
+	dd _fsub_st0
+	dd _fsub_st0
+
+_dc.f0	dd _fdivr_st0
+	dd _fdivr_st0
+	dd _fdivr_st0
+	dd _fdivr_st0
+	dd _fdivr_st0
+	dd _fdivr_st0
+	dd _fdivr_st0
+	dd _fdivr_st0
+
+_dc.f8	dd _fdiv_st0
+	dd _fdiv_st0
+	dd _fdiv_st0
+	dd _fdiv_st0
+	dd _fdiv_st0
+	dd _fdiv_st0
+	dd _fdiv_st0
+	dd _fdiv_st0
+
+_dd.c0	dd _ffree_sti
+	dd _ffree_sti
+	dd _ffree_sti
+	dd _ffree_sti
+	dd _ffree_sti
+	dd _ffree_sti
+	dd _ffree_sti
+	dd _ffree_sti
+
+_dd.c8	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+
+_dd.d0	dd _fst_sti
+	dd _fst_sti
+	dd _fst_sti
+	dd _fst_sti
+	dd _fst_sti
+	dd _fst_sti
+	dd _fst_sti
+	dd _fst_sti
+
+_dd.d8	dd _fstp_sti
+	dd _fstp_sti
+	dd _fstp_sti
+	dd _fstp_sti
+	dd _fstp_sti
+	dd _fstp_sti
+	dd _fstp_sti
+	dd _fstp_sti
+
+_dd.e0	dd _fucom_st0
+	dd _fucom_st0
+	dd _fucom_st0
+	dd _fucom_st0
+	dd _fucom_st0
+	dd _fucom_st0
+	dd _fucom_st0
+	dd _fucom_st0
+
+_dd.e8	dd _fucomp_sti
+	dd _fucomp_sti
+	dd _fucomp_sti
+	dd _fucomp_sti
+	dd _fucomp_sti
+	dd _fucomp_sti
+	dd _fucomp_sti
+	dd _fucomp_sti
+
+_dd.f0	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+
+_dd.f8	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+
+_de.c0	dd _faddp_st0
+	dd _faddp_st0
+	dd _faddp_st0
+	dd _faddp_st0
+	dd _faddp_st0
+	dd _faddp_st0
+	dd _faddp_st0
+	dd _faddp_st0
+
+_de.c8	dd _fmulp_st0
+	dd _fmulp_st0
+	dd _fmulp_st0
+	dd _fmulp_st0
+	dd _fmulp_st0
+	dd _fmulp_st0
+	dd _fmulp_st0
+	dd _fmulp_st0
+
+_de.d0	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+
+_de.d8	dd _fcompp
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+
+_de.e0	dd _fsubrp_st0
+	dd _fsubrp_st0
+	dd _fsubrp_st0
+	dd _fsubrp_st0
+	dd _fsubrp_st0
+	dd _fsubrp_st0
+	dd _fsubrp_st0
+	dd _fsubrp_st0
+
+_de.e8	dd _fsubp_st0
+	dd _fsubp_st0
+	dd _fsubp_st0
+	dd _fsubp_st0
+	dd _fsubp_st0
+	dd _fsubp_st0
+	dd _fsubp_st0
+	dd _fsubp_st0
+
+_de.f0	dd _fdivrp_st0
+	dd _fdivrp_st0
+	dd _fdivrp_st0
+	dd _fdivrp_st0
+	dd _fdivrp_st0
+	dd _fdivrp_st0
+	dd _fdivrp_st0
+	dd _fdivrp_st0
+
+_de.f8	dd _fdivp_st0
+	dd _fdivp_st0
+	dd _fdivp_st0
+	dd _fdivp_st0
+	dd _fdivp_st0
+	dd _fdivp_st0
+	dd _fdivp_st0
+	dd _fdivp_st0
+
+_df.c0	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+
+_df.c8	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+
+_df.d0	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+
+_df.d8	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+
+_df.e0	dd _fstsw_ax
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+
+_df.e8	dd _fucomip_sti
+	dd _fucomip_sti
+	dd _fucomip_sti
+	dd _fucomip_sti
+	dd _fucomip_sti
+	dd _fucomip_sti
+	dd _fucomip_sti
+	dd _fucomip_sti
+
+_df.f0	dd _fcomip_sti
+	dd _fcomip_sti
+	dd _fcomip_sti
+	dd _fcomip_sti
+	dd _fcomip_sti
+	dd _fcomip_sti
+	dd _fcomip_sti
+	dd _fcomip_sti
+
+_df.f8	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+	dd vazio
+
+; times 0x580+0x480 - ( _ - __ ) db 0
+; tabela de strings
+b_pref	db 0x26,0x2e,0x36,0x3e,0x64,0x65,0x66,0x67,0xf0,0xf1	; 0 nao necessario
+reg8	db 'al',0,'cl',0,'dl',0,'bl',0,'ah',0,'ch',0,'dh',0,'bh',0
+reg32	db 'eax',0,'ecx',0,'edx',0,'ebx',0,'esp',0,'ebp',0,'esi',0,'edi',0
+regseg	db 'es',0,'cs',0,'ss',0,'ds',0,'fs',0,'gs',0
+cond	db 'o',0,0,'no',0,'b',0,0,'ae',0,'e',0,0,'ne',0,'be',0,'a',0,0,'s',0,0,'ns',0,'pe',0,'po',0,'l',0,0,'ge',0,'le',0,'g',0
+tipo 	db 'by ',0,'wo ',0,'dd ',0
+grupo1	db 'add',0,'or',0,0,'adc',0,'sbb',0,'and',0,'sub',0,'xor',0,'cmp',0
+grupo2	db 'rol',0,'ror',0,'rcl',0,'rcr',0,'shl',0,'shr',0,'sal',0,'sar',0
+grupo3	db 'test',0,0xff,0x26,'@@',0,'not',0,0,'neg',0,0,'mul',0,0,'imul',0,'div',0,0,'idiv',0
+aviso1	db 'instrução inválida',0
+aviso2	db 'registrador de segmento inválido',0
+aviso3 	db 'codigo de instrução não usado',0
+; (para instr não implementadas neste programa)
+aviso4	db 'código de instrução indisponivel',0
+aviso5	db 'inválida. (gera Int 06 ao ser executada)'
+livre	db 'esc',0xff,0x45,0
+src	db 's',0,'r',0,'c',0
+_xmm	db 'xmm0',0,'xmm1',0,'xmm2',0,'mm3',0,'xmm4',0,'xmm5',0,'xmm6',0,'xmm7',0
+_st	db 'st0',0,'st1',0,'st2',0,'st3',0,'st4',0,'st5',0,'st6',0,'st7',0
+
+m16.0	db '[bx+si',0xff,0x29,']',0
+m16.1	db '[bx+di',0xff,0x29,']',0
+m16.2	db '[bp+si',0xff,0x29,']',0
+m16.3	db '[bp+di',0xff,0x29,']',0
+m16.4	db '[si',0xff,0x29,']',0
+m16.5	db '[di',0xff,0x29,']',0
+m16.6	db '[',0xff,0x0c,']',0
+m16.7	db '[bx',0xff,0x29,']',0
+
+insbp	db 'bp',0xff,0x29,0
+
+m32.0	db '[eax',0xff,0x29,']',0
+m32.1	db '[ecx',0xff,0x29,']',0
+m32.2	db '[edx',0xff,0x29,']',0
+m32.3	db '[ebx',0xff,0x29,']',0
+m32.4	db '[',0xff,0x14,']',0
+m32.5	db '[',0xff,0x0d,']',0
+m32.6	db '[esi',0xff,0x29,']',0
+m32.7	db '[edi',0xff,0x29,']',0
+
+insebp	db 'ebp',0xff,0x29,0	; especial para a instruçcao ebp
+
+; instruções 386 ou abaixo
+_aaa	db 'aaa',0
+_aas	db 'aas',0
+_hlt	db 'hlt',0
+_cli	db 'cli',0
+_std 	db 'std',0
+_clc	db 'clc',0
+_nop	db 'nop',0
+_sti	db 'sti',0
+_mov	db 'mov',0
+_leave	db 'leave',0
+_ret	db 'ret',0
+_retf	db 'retf',0
+_fwait	db 'fwait',0
+_sahf	db 'sahf',0
+_lahf	db 'lahf',0
+_cmc	db 'cmc',0
+_int3	db 'int3',0
+_into	db 'into',0
+_stc	db 'stc',0
+_cld	db 'cld',0
+_cbw	db 'cbw',0
+_cwde	db 'cwde',0
+_cwd	db 'cwd',0
+_cdq	db 'cdq',0
+_das	db 'das',0
+_daa	db 'daa',0
+_push	db 'push',0
+_pop	db 'pop',0
+_salc	db 'salc',0
+
+_retiw	db 'ret ',0xff,0x0a,0
+_retfiw	db 'retf ',0xff,0x0a,0
+_intib	db 'int ',0xff,0x08,0
+_enter	db 'enter ',0xff,0x0a,',',0xff,0x08,0
+_xlatb	db 0xff,0x17,'xlatb',0
+_iret	db 'iret',0xff,0x15,0
+_inc	db 'inc ',0xff,0x0e,0
+_dec	db 'dec ',0xff,0x0e,0
+_add	db 0xff,0x20,' ',0xff,0x21,0	; usada tambem para or,adc,sbb,and,sub,xor,cmp
+_addi	db 0xff,0x20,' ',0xff,0x0b,',',0xff,0x06,0
+_imebb	db 0xff,0x24,',',0xff,0x07,0
+_imebv	db 0xff,0x24,',',0xff,0x08,0
+_pushs	db 0xff,0x3f,' ',0xff,0x1c,0
+_pops	db 0xff,0x3e,' ',0xff,0x1c,0
+_pushr	db 0xff,0x3f,' ',0xff,0x0e,0
+_popr	db 0xff,0x3e,' ',0xff,0x0e,0
+_pusha	db 0xff,0x3f,'a',0xff,0x15,0
+_popa	db 0xff,0x3e,'a',0xff,0x15,0
+_pushf	db 0xff,0x3f,'f',0xff,0x15,0
+_popf	db 0xff,0x3e,'f',0xff,0x15,0
+_pushib	db 0xff,0x3f,' ',0xff,0x08,0
+_pushiv	db 0xff,0x3f,' ',0xff,0x09,0
+_poprm	db 0xff,0x3e,' ',0xff,0x16,0
+_aam	db 'aam (',0xff,0x08,')',0
+_aad	db 'aad (',0xff,0x08,')',0
+_stos	db 'stos',0xff,0x18,0
+_scas	db 'scas',0xff,0x18,0
+_ins	db 'ins',0xff,0x18,0
+_outs	db 0xff,0x17,'outs',0xff,0x18,0
+_lods	db 0xff,0x17,'lods',0xff,0x18,0
+_cmps	db 0xff,0x17,'cmps',0xff,0x18,0
+_movs	db 0xff,0x17,'movs',0xff,0x18,0
+_in	db 'in ',0xff,0x0b,',#',0xff,0x08,0
+_out	db 'out #',0xff,0x08,',',0xff,0x0b,0
+_indx	db 'in ',0xff,0x0b,',[dx]',0
+_outdx	db 'out [dx],',0xff,0x0b,0
+_testi	db 'test ',0xff,0x0b,',',0xff,0x06,0
+_testr	db 'test ',0xff,0x21,0
+_xchg	db 'xchg ',0xff,0x0f,',',0xff,0x0e,0
+_xchgr	db 'xchg ',0xff,0x21,0
+_call	db 'call ',0xff,0x1b,0
+_calli	db 'call ',0xff,0x28,0
+_jcxz	db 'j',0xff,0x1e,'z ', 0xff,0x1a,0
+_jcc	db 'j',0xff,0x11,' ',0xff,0x1a,0
+_jmps	db 'jmp ',0xff,0x1a,0
+_jmp	db 'jmp ',0xff,0x1b,0
+_jmpf	db 'jmp ',0xff,0x1b,0
+_jmpi	db 'jmp ',0xff,0x28,0
+_loop	db 'loop',0xff,0x15,' ',0xff,0x1a,0
+_loopc	db 'loop',0xff,0x1f,0xff,0x15,' ',0xff,0x1a,0
+_les	db 'les ',0xff,0x2b,0
+_lds	db 'lds ',0xff,0x2b,0
+_lea	db 'lea ',0xff,0x2b,0
+_bound	db 'bound ',0xff,0x2b,0
+_arpl	db 'arpl ',0xff,0x2c,0
+_deslib	db 0xff,0x25,',',0xff,0x08,0
+_deslcl	db 0xff,0x25,',cl',0
+_desl1	db 0xff,0x25,',1',0
+_movi	db 0xff,0x3d,' ',0xff,0x0b,',',0xff,0x17,'[',0xff,0x23,']',0
+_mova	db 0xff,0x3d,' ',0xff,0x17,'[',0xff,0x23,'],',0xff,0x0b,0
+_movrb	db 0xff,0x3d,' ',0xff,0x10,',',0xff,0x08,0
+_movrv	db 0xff,0x3d,' ',0xff,0x0e,',',0xff,0x09,0
+_movmr	db 0xff,0x22,' ',0xff,0x21,0
+_movsm	db 0xff,0x22,' ',0xff,0x2d,0
+_movmi	db 0xff,0x22,' ',0xff,0x16,',',0xff,0x07,0
+_una	db 0xff,0x27,0	; nao precisa do zero...
+_indfe	db 0xff,0x48,0	; nao precisa do zero final
+_indff	db 0xff,0x3b,0
+_imulv	db 'imul ',0xff,0x2a,'*',0xff,0x09,0
+_imulb	db 'imul ',0xff,0x2a,'*',0xff,0x08,0
+_rep	db 'rep',0xff,0x2e,0
+_lock	db 'lock ',0xff,0x46,0
+
+mpu	db 0xff,0x40,0		; usada em todos os oitos endereços
+
+; instruções inc, dec, call, callfar...
+_incx	db 'inc ',0xff,0x3a,0,0		; deixar 2 zeros
+_decx	db 'dec ',0xff,0x3a,0,0		; deixar 2 zeros
+_callx	db 'call', 0xff,0x3a,0,0		; deixar 2 zeros
+_callfarx	db 'call far ',0xff,0x37,0,0		; deixar 2 zeros
+_jmpx	db 'jmp',0xff,0x3a,0,0		; deixar 2 zeros
+_jmpfarx	db 'jmp far ',0xff,0x37,0,0 		; deixar 2 zeros
+_pusx	db 0xff,0x3f,' ',0xff,0x3c,0,0	; deixar 2 zeros
+
+_a32	db 0xff,0x02	; não precisa zero no final
+_o32	db 0xff,0x01	; idem
+_of	db 0xff,0x05	; idem
+_rseg0	db 0xff,0x03	; idem
+_rseg1	db 0xff,0x04	; idem
+_cbwm	db 0xff,0x19	; idem, usa o loop da rotina principal, só altera si.
+
+
+; instruções de dois bytes
+_clts	db 'clts',0
+_loadall	db 'loadall',0
+_load286	db 'loadall286',0
+
+; (todas as expressões devem ter a mesma extensão em bytes, exceto o último (8 ao todo)
+; usa _0f00 para buscar o grupo todo
+grupo6	db 'sldt ',0xff,0x36,0	;8
+	db 'str ',0xff,0x36,0,0	;8
+	db 'lldt ',0xff,0x36,0	;8
+	db 'ltr ',0xff,0x36,0,0	;8
+	db 'verr ',0xff,0x36,0	;8
+	db 'verw ',0xff,0x36,0	;8
+	db 0xff,0x38,0,'@@'		; imprime instrução inválida  @=bytes livres
+_i0f00	db 0xff,0x35,0	; ocupa os dois bytes subtraidos da expressão anterior, para economizer espaço
+	db 'inv pg486',0		;a
+
+; (todas as expressões devem ter a mesma extensão em bytes, exceto o último (8 ao todo)
+; usa _0f01 para buscar o grupo todo
+grupo7	db 'sgdt ',0xff,0x37,0
+	db 'sidt ',0xff,0x37,0
+	db 'lgdt ',0xff,0x37,0
+	db 'lidt ',0xff,0x37,0
+	db 'smsw ',0xff,0x36,0
+	db 0xff,0x38,0,'@@'		; @= bytes livres
+_i0f01	db 0xff,0x39,0		; ocupa os dois bytes subtraidos da expressão anterior, para economizer espaço
+	db 'lmsw ',0xff,0x36,0
+	db 0xff,0x38,0
+
+_lsl	db 'lsl ',0xff,0x2a,0
+_lar	db 'lar ',0xff,0x2a,0
+_bsf	db 'bsf ',0xff,0x2a,0
+_bsr	db 'bsr ',0xff,0x2a,0
+_imul	db 'imul ',0xff,0x2a,0
+
+_jccnear	db 'j',0xff,0x11,' ',0xff,0x1b,0
+_set	db 'set',0xff,0x11,' ',0xff,0x13,0
+
+_lss	db 'lss ',0xff,0x2b,0
+_lfs	db 'lfs ',0xff,0x2b,0
+_lgs	db 'lgs ',0xff,0x2b,0
+
+_umov	db 'umov ',0xff,0x21,0
+_pushfs	db 0xff,0x3f,' ',0xff,0x1d,0			; Serve também para push gs
+_popfs	db 0xff,0x3e,' ',0xff,0x1d,0			; Serve também para pop gs
+_bt	db 'bt',0xff,0x33,' ',0xff,0x31,0
+_bti	db 'bt',0xff,0x34,' ',0xff,0x3a,'.',0xff,0x08,0
+_movzx	db 0xff,0x3d,'zx ',0xff,0x30,0
+_movsx	db 0xff,0x3d,'sx ',0xff,0x30,0
+_shld	db 'shld ',0xff,0x31,',',0xff,0x32,0
+_shrd	db 'shrd ',0xff,0x31,',',0xff,0x32,0
+_cr	db 0xff,0x44,' cr',0xff,0x2f,',',0xff,0x0e,0
+_crr	db 0xff,0x44,' ',0xff,0x0e,', cr',0xff,0x2f,0
+_dr	db 0xff,0x44,' dr',0xff,0x2f,',',0xff,0x0e,0
+_drr	db 0xff,0x44,' ',0xff,0x0e,', dr',0xff,0x2f,0
+_tr	db 0xff,0x44,' tr',0xff,0x2f,',',0xff,0x0e,0
+_trr	db 0xff,0x44,' ',0xff,0x0e,', tr',0xff,0x2f,0
+
+; instruções 486
+_wbinvd		db 'wbinvd',0
+_invd		db 'invd',0
+_bswap		db 'bswap ',0xff,0x12,0
+_xadd		db 'xadd ',0xff,0x21,0
+_cmpxchg486	db 'cmpxchg ',0xff,0x21,0
+
+; instruções fpu
+_fadd_single_real	db 'fadd dd ',0
+_fmul_single_real	db 'fmul dd ',0
+_fcom_single_real	db 'fcom dd ',0
+_fcomp_single_real	db 'fcomp dd ',0
+_fsub_single_real	db 'fsubr dd ',0
+_fsubr_single_real	db 'fsubr dd ',0
+_fdiv_single_real	db 'fdiv dd ',0
+_fdivr_single_real	db 'fdivr dd',0
+_fld_single_real	db 'fld dd ',0
+_fst_single_real	db 'fst dd ',0
+_fstp_single_real	db 'fstp dd ',0
+
+_fadd_doble_real	db 'fadd qw ',0
+_fmul_doble_real	db 'fmul qw ',0
+_fcom_doble_real	db 'fcom qw ',0
+_fcomp_doble_real	db 'fcomp qw ',0
+_fsub_doble_real	db 'fsub qw ',0
+_fsubr_doble_real	db 'fsubr qw ',0
+_fdiv_doble_real	db 'fdiv qw ',0
+_fdivr_doble_real	db 'fdivr qw ',0
+_fld_doble_real	db 'fld qw ',0
+_fst_doble_real	db 'fst qw ',0
+_fstp_doble_real	db 'fstp qw ',0
+
+_fiadd_wo_Int	db 'fiadd wo ',0
+_fimul_wo_Int	db 'fimul wo ',0
+_ficom_wo_Int	db 'ficom wo ',0
+_ficomp_wo_Int	db 'ficomp wo ',0
+_fisub_wo_Int	db 'fisub wo ',0
+_fisubr_wo_Int	db 'fisubr wo ',0
+_fidiv_wo_Int	db 'fidiv wo ',0
+_fidivr_wo_Int	db 'fidivr wo ',0
+_fild_wo_Int	db 'fild wo ',0
+_fist_wo_Int	db 'fist wo ',0
+_fistp_wo_Int	db 'fistp wo ',0
+
+_fiadd_dd_Int	db 'fiadd qw ',0
+_fimul_dd_Int	db 'fimul qw ',0
+_ficom_dd_Int	db 'ficom qw ',0
+_ficomp_dd_Int	db 'ficomp qw ',0
+fisub_dd_Int	db 'fisub qw ',0
+fisubr_dd_Int	db 'fisubr qw',0
+fidiv_dd_Int	db 'fidiv qw ',0
+fidivr_dd_Int	db 'fidivr qw ',0
+fild_dd_Int	db 'fild dd ',0
+fist_dd_Int	db 'fist dd ',0
+fistp_dd_Int	db 'fistp dd ',0
+
+fld_ext_real	db 'fld tb ',0
+fstp_ext_real	db 'fstp tb ',0
+
+_fbld_pack_bcd	db 'fbld ',0
+_fbstp_pack_bcd	db 'fbstp ',0
+
+_fild_qw_Int	db 'fild qw ',0
+_fistp_qw_Int	db 'fistp qw ',0
+
+_fldenv		db 'fldenv ',0
+_fldcw_2bytes	db 'fldcw ',0
+_fstenv		db 'fstenv ',0
+_fstcw_2bytes	db 'fstcw ',0
+_frstor		db 'frstor ',0
+_fsave		db 'fsave ',0
+_fstsw		db 'fstsw ',0
+
+vazio		db 'esc',0
+
+_fadd_sti		db 'fadd ',0xff,0x41,0
+_fcom_sti		db 'fcom ',0xff,0x41,0
+_fsub_sti		db 'fsub ',0xff,0x41,0
+_fdiv_sti		db 'fdiv ',0xff,0x41,0
+_fmul_sti		db 'fmul ',0xff,0x41,0
+_fcomp_sti	db 'fcomp ',0xff,0x41,0
+_fsubr_sti	db 'fsubr ',0xff,0x41,0
+_fdivr_sti	db 'fdivr ',0xff,0x41,0
+_fld_sti		db 'fld ',0xff,0x41,0
+_fxch_sti		db 'fxch ',0xff,0x41,0
+_fcmovb_sti	db 'fcmovb ',0xff,0x41,0
+_fcmovbe_sti	db 'fcmovbe ',0xff,0x41,0
+_fcmove_sti	db 'fcmove ',0xff,0x41,0
+_fcmovu_sti	db 'fcmovu ',0xff,0x41,0
+_fcmovnb_sti	db 'fcmovnb ',0xff,0x41,0
+_fcmovnbe_sti	db 'fcmovnbe ',0xff,0x41,0
+_fcomi_sti	db 'fcomi ',0xff,0x41,0
+_fcmovne_sti	db 'fcmovne ',0xff,0x41,0
+_fcmovnu_sti	db 'fcmovnu ',0xff,0x41,0
+_fucomi_sti	db 'fucomi ',0xff,0x41,0
+_fcomip_sti	db 'fcomip ',0xff,0x41,0
+_fucomip_sti	db 'fucomip ',0xff,0x41,0
+
+_fadd_st0		db 'fadd ',0xff,0x42,0
+_fsubr_st0	db 'fsubr ',0xff,0x42,0
+_fdivr_st0	db 'fdivr ',0xff,0x42,0
+_fmul_st0		db 'fmul ',0xff,0x42,0
+_fsub_st0		db 'fsub ',0xff,0x42,0
+_fdiv_st0		db 'fdiv ',0xff,0x42,0
+_fucom_st0	db 'fucom ',0xff,0x42,0
+
+_faddp_st0	db 'faddp ',0xff,0x42,0
+_fsubrp_st0	db 'fsubrp ',0xff,0x42,0
+_fdivrp_st0	db 'fdivrp ',0xff,0x42,0
+_fmulp_st0	db 'fmulp ',0xff,0x42,0
+_fsubp_st0	db 'fsubp ',0xff,0x42,0
+_fdivp_st0	db 'fdivp ',0xff,0x42,0
+
+_ffree_sti	db 'ffree ',0xff,0x43,0
+_fst_sti		db 'fst ',0xff,0x43,0
+_fstp_sti		db 'fstp ',0xff,0x43,0
+_fucomp_sti	db 'fucomp ',0xff,0x43,0
+
+_fcompp		db 'fcompp',0
+_fucompp		db 'fucompp',0
+_fstsw_ax		db 'fstsw ax',0
+_fnop		db 'fnop',0
+_fchs		db 'fchs',0
+_fabs		db 'fabs',0
+_ftst		db 'ftst',0
+_fxam		db 'fxam',0
+_f2xm1		db 'f2xm1',0
+_fyl2x		db 'fyl2x',0
+_fptan		db 'fptan',0
+_fpatan		db 'fpatan',0
+_fxtract		db 'fxtract',0
+_fprem1		db 'fprem1',0
+_fdecstp		db 'fdecstp',0
+_fincstp		db 'fincstp',0
+_fld1		db 'fld 1',0
+_fldl2t		db 'fld L2T',0
+_fldl2e		db 'fld L2e',0
+_fldpi		db 'fld pi',0
+_fldlg2		db 'fld Lg2',0
+_fldln2		db 'fld ln2',0
+_fldz		db 'fld 0',0
+_fprem		db 'fprem',0
+_fyl2xp1		db 'fyl2xp1',0
+_fsqrt		db 'fsqrt',0
+_fsincos		db 'fsincos',0
+_frndint		db 'frndint',0
+_scale		db 'fscale',0
+_fsin		db 'fsin',0
+_fcos		db 'fcos',0
+_fclex		db 'fclex',0
+_finit		db 'finit',0
+
+; Instruções p5
+_cpuid		db 'cpuid',0
+_emms		db 'emms',0
+_rdmsr		db 'rdmsr',0
+_rdtsc		db 'rdtsc',0
+_rsm		db 'rsm',0
+_wrmsr		db 'wrmsr',0
+_cmpxchg		db 'cmpxchg ',0xff,0x21,0
+
+; instruções mmx
+_psubb		db 'psubb ',0xff,0x49,0
+_psubw		db 'psubw ',0xff,0x49,0
+_psubd		db 'psubd ',0xff,0x49,0
+_psubsb		db 'psubsb ',0xff,0x49,0
+_psubsw		db 'psubsw ',0xff,0x49,0
+_psubusb		db 'psubusb ',0xff,0x49,0
+_psubusw		db 'psubusw ',0xff,0x49,0
+
+_packssdd		db 'packssdd ',0xff,0x49,0
+_packsswb		db 'packsswb',0xff,0x49,0
+_packuswb		db 'packuswb',0xff,0x49,0
+
+_paddb		db 'paddb ',0xff,0x49,0
+_paddd		db 'paddd ',0xff,0x49,0
+_paddsb		db 'paddsb ',0xff,0x49,0
+_paddsw		db 'paddsw ',0xff,0x49,0
+_paddusb		db 'paddusb ',0xff,0x49,0
+_paddusw		db 'paddusw ',0xff,0x49,0
+
+_pand		db 'pand ',0xff,0x49,0
+_pandn		db 'pandn ',0xff,0x49,0
+
+_paveb		db 'paveb ',0xff,0x49,0
+
+_pcmpeqb		db 'pcmpeqb ',0xff,0x49,0
+_pcmpeqw		db 'pcmpeqw ',0xff,0x49,0
+_pcmpeqd		db 'pcmpeqd ',0xff,0x49,0
+_pcmpgtb		db 'pcmpgtb ',0xff,0x49,0
+_pcmpgtw		db 'pcmpgtw ',0xff,0x49,0
+_pcmpgtd		db 'pcmpgtd ',0xff,0x49,0
+
+_pmadddd		db 'pmadddd ',0xff,0x49,0
+
+_pmulhw		db 'pmulhw ',0xff,0x49,0
+_pmullw		db 'pmullw ',0xff,0x49,0
+
+_por		db 'por ',0xff,0x49,0
+_pxor		db 'pxor ',0xff,0x49,0
+
+_punpckhbw	db 'punpckhbw ',0xff,0x49,0
+_punpckhwd	db 'punpckhwd ',0xff,0x49,0
+_punpckhdq	db 'punpckhdq ',0xff,0x49,0
+_punpcklbw	db 'punpcklbw ',0xff,0x49,0
+_punpcklwd	db 'punpcklwd ',0xff,0x49,0
+_punpckldq	db 'punpckldq ',0xff,0x49,0
+
+_movq		db 'movq ',0xff,0x49,0
+_movqr		db 'movq ',0xff,0x4a,0
+_movd		db 'movd ',0xff,0x4b,0
+_movdr		db 'movd ',0xff,0x4c,0
+
+_psllw		db 'psllw ',0xff,0x49,0
+_pslld		db 'pslld ',0xff,0x49,0
+_psllq		db 'psllq ',0xff,0x49,0
+_psrlw		db 'psrlw ',0xff,0x49,0
+_psrld		db 'psrld ',0xff,0x49,0
+_psrlq		db 'psrlq ',0xff,0x49,0
+_psraw		db 'psraw ',0xff,0x49,0
+_psrad		db 'psrad ',0xff,0x49,0
+
+_psllwi		db 'psllw ',0xff,0x50,0
+_pslldi		db 'pslld ',0xff,0x50,0
+_psllqi		db 'psllq ',0xff,0x50,0
+_psrlwi		db 'psrlw ',0xff,0x50,0
+_psrldi		db 'psrld ',0xff,0x50,0
+_psrlqi		db 'psrlq ',0xff,0x50,0
+_psrawi		db 'psraw ',0xff,0x50,0
+_psradi		db 'psrad ',0xff,0x50,0
+_gr121314		db 0xff,0x47		; busca ponteiro dos grupos 12, 13 e 14
+
+; instruções p6
+_int1		db 'int1',0
+_rdpmc		db 'rdpmc',0
+_cmov		db 'cmov ',0xff,0x11,' ', 0xff,0x2a,0
+
+; instruções mmx extendidas...falta implementar

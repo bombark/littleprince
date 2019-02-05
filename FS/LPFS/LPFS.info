@@ -1,0 +1,127 @@
+;-----------------------------------------------------------------------------------------
+;
+; LITTLE PRINCE Operational System
+; Copyright (C) 2008 to 2011 - LP Development Team
+;
+;-----------------------------------------------------------------------------------------
+;
+; This program is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 2 of the License, or
+; (at your option) any later version.
+;
+; This program is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+; GNU General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this program; if not, write to the Free Software
+; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+;
+;-----------------------------------------------------------------------------------------
+;
+; @Id: FS.info  - 2008-2-10, cb-toledo
+; Information about file system
+; For compilation use Flat Assembler (http://flatassembler.net)
+;
+;-----------------------------------------------------------------------------------------
+;
+; Header definitions:
+; The header varies with type file.
+; Executable files receive sign from 04 to 0f. all others signs are link to data files
+;
+;
+; file type 05: Minimal header of 32 bytes with follow structure:
+;	0- sign
+;	4- entry point
+;	8- Data size
+;	12- creation date & time
+;	16- version
+;	20- attrib
+;	24- checksum
+;	28- reserved
+;
+; file type 06: Normal header with 1 sectors
+; 	first sector has all informations about file and creator
+;
+;	structure:
+;
+;	0- sign
+;	4- entry point
+;	8- Data size
+;	12- creation date & time
+;	16- version
+;	20- attrib + charactere table definition
+;	24- checksum
+;	28- reserved
+;	32- reserved
+;	36- creator name pointer
+;	40- creator address pointer
+;	44- 64x64bits icone pointer
+;	48- public decodification key (for encrypted files)
+;	52- command table pointer
+;	56- pointer to key buffer
+;	60- pointer to event buffer
+;	64- reserved
+;	68- available for user
+;	72- "
+;	76- "
+;	data field just to #511
+;
+;
+; file type 07 to 0f - reserved for others executable files
+
+
+;-----------------------------------------------------------------------------------------
+
+; formatação de disco para LPFS
+; use mov al, partition (0,1,2,3) mov bl, unit (0x80,0x81,0x82,0x83) call FormatDisk
+; load directories (DM) Administrator, PublicFolder and TrashFolder
+
+;-----------------------------------------------------------------------------------------
+
+; a busca do nome de arquivo é feita a partir do diretório do usuário ou diretório aberto
+; pode ser o diretório administrador ou a pasta publica
+
+; Colocar um link da pasta publica na pasta administrador;
+
+; inicialmente ler arquivos do sistema fat e salvar no sistema LP. fazer a rotina salva
+; arquivos
+
+;-----------------------------------------------------------------------------------------
+; Nomes para arquivos:
+; (na entrada das rotinas é necessário ter os nomes de um dos seguintes modos)
+
+; simples:	Arquivo.ext
+; com diretorios	Pasta0/Pasta1/Arquivo.ext
+;
+; esi aponta o nome e ecx indica a extensao do nome. ebx=deve indicar a base da pasta raiz
+; os espaços internos ao nome pertencem ao mesmo e devem ser indicados por ecx
+;-----------------------------------------------------------------------------------------
+
+; falta...
+; salvar arquivos diminuindo o tamanho do arquivo. a parte liberada deverá ser liberada.
+; se o arquivo tiver muitos fragmentos, deve-se liberar a quantidade suficiente
+;
+; arrumar aloca item para realocar o diretório quando este fica maior que o espaço usado
+;
+
+A FAZER:
+
+1- 	O sistema já se encontra instalado no hd, mas o ponteiro no boot nao coincide;
+
+2-	O programa MM_exx já se encontra no HD....fazer o sistema carregar este na
+	partida;
+
+3- 	Transferir a fonte para a pasta sistema e encadear numa lista de fontes;
+	O sistema escolhe as fontes para mostrar na tela, ou para impressao...;
+
+4- 	Transferir o arquivo com as mascaras de mouse para a pasta sistema;
+	O mouse escolhe uma das mascaras em funçao do tipo de objeto:
+	4.0- default, 4.1- linkado normal, 4.2- linkado destacado, 4,3- linkado clicado,
+	figura 1..16....cada evento pode escolher uma figura para cada um dos eventos
+
+5-	Transferir...
+
+6-

@@ -1,0 +1,118 @@
+Video
+  Colocar as animacoes nos objetos e no cursor do mouse
+    Existe problemas com o buffer circular quando ele fica cheio
+  Existe problemas no desenho de imagens 32 Bpp usando o blit_Image
+  Necessario aumentar o numero de pixel por linha de 2 bytes para 4 bytes
+  Fazer recursivo o script fazendo com que se possa criar sub objetos
+  Movimentacao dos objetos pelo mouse
+  Colocar o JPEG
+  Colocar nomes nas janelas
+  Otimizar
+    Movimentacao de janela: Fazer com que nao precise desenhar todas as janelas
+    Criar uma rotina especifica para copiar bitmaps iguais 
+
+Tarefas
+  Terminar o sistema de buffers de comunicacao  (80%)
+  
+Buffe circular
+  Correcao de bug de colocar diferentes tamanhos de dados 
+   1b, 2b, 4b -> ele nao coloca certo o de 4  
+
+Sistema de Arquivos
+  Terminar a rotina de copia de Arquivos
+  Terminar a rotina que devolve as pastas e arquivos de um path
+  Testar todas as rotinas
+  FAT
+    Arrumar leitura com a FAT
+    Arrumar buffer redimensionavel com a FAT
+  LPFS
+    Termina-lo (utilizar todas as variaveis previstas)
+  NTFS
+    Desenvolve-lo
+  Reinsefeit
+    Desenvolve-lo
+
+Som 
+  Criar o driver
+
+Mouse
+  Arrumar o mouse para que funcione no real
+  Organizar as rotinas do mouse 
+  Desenvolver o driver do mouse com scroll
+  Colocar as variaveis no padrao correto
+  se clicar muito rapido, o sistema trava. Arrumar isso - Nao deu mais
+  Retirar o ultimo retangulo negativo quando move-se uma janela
+  Existe um ponto preto onde o mouse nasce
+  O mouse fica lento na borda direita e na de cima         (OK)
+  O mouse devolve um bit para marcar que ele se movimentou (OK)
+  Quando arrasta a janela, o mouse escorrega quando está na borda
+  Desenvolver o duplo click
+  Desenvolver o mecanismo de botao pressionado e devolver o codigo quando o botao voltar	
+
+Driver de HD
+  Arrumar o driver da LBA extendida
+
+USB
+  Desenvolve-lo
+
+Rede
+  Desenvolve-lo
+
+Timer
+  Desonvelver o sistema de thread
+  Desenvolver o sistema de sub-tarefas
+  Terminar o sistema de multi-tarefa
+    Desligar o programa quando estiver parado
+    - Ele trava, quando é coloca a calculadora e ficar clicando adoidado,
+      Parece que o problema está na pausa e ativacao do programa.
+      
+        
+Sistema GUI
+  Por enquanto todos os objetos estão no sistema. Mas me parece ser possivel
+  fazer com que o os objetos fiquem no programa e ele mesmo procurar o evento.
+  Me parece que assim fica melhor. Dar uma estudada.
+ 
+  Colocar em forma de threat o RunEvent, assim o programa nao trava.
+    Retirar o RunEvent do syscall Window, pois ele será automaticamente executado pelo timer
+  
+  Colocar Obj_Up	; Ponteiro do objeto de cima
+  
+Sistema de threat
+  Atributos do threat 
+    executa sempre do inicio | executa onde parou
+    Nao Repetir | Repetir
+    
+    
+BUGS:
+	problemas no buffer 
+	  # quando se aperta por um tempo o botao, dah excessao 
+	    = Arrumado, estava escrevendo fora do buffer
+	  # Quando chega no final do buffer e ocorre varios eventos, dah excessao 
+	    = Arrumado, estava incorreto o cursor de escrita, quando volta para o inicio do
+	      buffer. Apenas foi trocado a instrucao (xor cl, cl por mov cl, 1)  
+	 
+	problema com a abertura de programas 
+	  # Trava quando abre mais ou menos 4 programas
+	    Parece ser problema com o heap (talvez esteja ligado com o problema do buffer)
+	  = Arrumado, o buffer corrompia o heap  
+	   
+	problema desconhecido 
+	  # trava do nada
+	    Tem relacao com a pausa do programa, pois sem a pausa funciona bem o sistema
+	
+	problema
+	  # Cuidar do descritor do heap (variaveis do sistema, o computador trava)
+	    Descobrir o pq e sempre cuidar para que nunca ocorra nenhuma alteracao
+	    desse tipo nas variaveis 
+	
+	problemas no fechamento de programas 
+	  # ele trava no Object_Destroy
+	    = Arrumado, o buffer corrompia o heap
+	  # Falta fechar os buffers do programa       
+	  
+	problemas com guisystem2
+	  # Ele trava se falta parametros numa instrucao
+	  
+	problemas com a leitura do HD
+	  # dah excessao quando a unidade a ser lida eh invalida (File_Open)  
+	     
