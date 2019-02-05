@@ -1,2 +1,3 @@
-# littleprince
-Little Operation System wrote all in Assembly (FASM)
+# Little Prince
+
+Little Operating System wrote all in Assembly (FASM)
