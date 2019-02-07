@@ -112,13 +112,13 @@ include "Devices/HD_dev.inc"
 
 ; Video driver
 include "Video/Vesa20.inc"
-include "Video/Jpegview/Jpeglib.inc"
+;include "Video/Jpegview/Jpeglib.inc"
 include "Video/VideoTest.inc"
 
 
 ; Graph System
 ;include "FONTS/fonte1.inc"
-include "FONTS/f_bmp7x9m.inc"			; geração de fonte para gravação
+include "FONTS/f_bmp7x9m.inc"			; geraï¿½ï¿½o de fonte para gravaï¿½ï¿½o
 include "Video/GraphSystem.inc"
 include "Video/TextSystem.inc"
 include "Video/FontSystem.inc"
@@ -166,5 +166,3 @@ db 'fim'
 
 align 0x200	;(don't remove)
 sistema_fim: db 0 	;(don't remove)
-
-

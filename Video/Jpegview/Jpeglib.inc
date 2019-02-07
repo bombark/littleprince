@@ -916,7 +916,7 @@ dd 1.402,	-0.71414,	-0.34414,	+1.772
 ;    ;call    open
 ;    ;test    eax,eax
 ;    ;jz      close_program
-;    call    jpeg_info	; pega informaçoes
+;    call    jpeg_info	; pega informaï¿½oes
 ;    mov dword [jpeg_st],ebp
 ;    call    set_as_bgr2         ; set wallpaper
 ;    ;jmp     close_program       ; close the program right now
@@ -1034,7 +1034,7 @@ recortar:		;edi= buffer, eax= largura (pixels), (ecx,edx)= tamanho desejado
 
 ;-----------------------------------------------------------------------------------------
 ;
-; obtenção dos parâmentros jpeg
+; obtenï¿½ï¿½o dos parï¿½mentros jpeg
 ;
 ;-----------------------------------------------------------------------------------------
 align 4
@@ -1079,7 +1079,7 @@ jpeg_info:	;in:  eax= ponteiro do arquivo
 
 
 ;busca do arquivo jpg....?
-; posiciona recursividade para decomposiçao
+; posiciona recursividade para decomposiï¿½ao
    .l2: 	mov ebx,[ebp+tmp_bufer]	;tmp_bufer=100
         	add ebx,[ebx-4]		;matrices
         	mov cx,[ebx-2]
@@ -1116,8 +1116,8 @@ int 1
 int 1
         	cmp ecx,[edi-4]
         	jne eoi
-  	ret			; ao dar o ret a rotina .12 é executada
- .error:	stc			; até encontrar eoi para sair
+  	ret			; ao dar o ret a rotina .12 ï¿½ executada
+ .error:	stc			; atï¿½ encontrar eoi para sair
 	ret
 
 
@@ -1446,7 +1446,7 @@ READ:  ;mov eax,[ebp+fichero]
        	call mresize			; redimensiona
        	mov [ebp+tmp_bufer],edi
 	ret				; adicionado provisoriamente
-      ; jmp read			; nao é preciso...arquivo ja carregado inteiro
+      ; jmp read			; nao ï¿½ preciso...arquivo ja carregado inteiro
 
 
 ;-----------------------------------------------------------------------------------------
@@ -1547,7 +1547,7 @@ skip:		;eax=file edx=bytes to skip
 ; gerenciamento de memoria (comparar com o nosso sistema)
 ;
 ;-----------------------------------------------------------------------------------------
-; inicializaçao:
+; inicializaï¿½ao:
 ;	mov dword [iniciomemoria+4], 0xc		; proximo bloco
 ;	mov dword [iniciomemoria+8], 0x80250014		; 1o bloco livre heap
 ;	mov dword [iniciomemoria+0xc], 0x80260000	; fim heap
@@ -1597,7 +1597,7 @@ malloc:		; ecx=tamanho a alocar,
 	cmp esi,[iniciomemoria+8]	;total de memoria no heap
 	jc .l2
 	jne mresize1		; sai com erro
-	lea edx,[ebx+esi+4]		; endereço base = endereço registrado em iniciomemoria+8
+	lea edx,[ebx+esi+4]		; endereï¿½o base = endereï¿½o registrado em iniciomemoria+8
 	cmp edx,[iniciomemoria+12]
 	jnc mresize1		; sai com erro
 	mov [iniciomemoria+8],edx

@@ -42,12 +42,12 @@ VideoTest:
 ;
 ;int 1
 	;mov eax, 0x80210000
-	call jpeg_info
+	;call jpeg_info
 ;int 1
 	nop
 int 1
 
-;	call jpeg_info		; pega informaçoes
+;	call jpeg_info		; pega informaï¿½oes
 
 ;	call jpeg_display		; apresenta
 
@@ -62,7 +62,7 @@ int 1
 ;	esi: string (diretorio/diretorio/arquivo.ext)
 ;	cx: string extension
 ; Saida:
-;	ebx: o diretorio onde está o arquivo
+;	ebx: o diretorio onde estï¿½ o arquivo
 ;	esi: aponta o arquivo
 ;	edi:
 ; Altera:	eax
@@ -74,7 +74,7 @@ load_figure:
 	mov cx, Ff-Fi	; ext nome
 	mov esi, FName	; pont. nome
 	call LoadFileInSysMemory		; carrega arquivo no heap
-; validaçao do arquivo de fonte:
+; validaï¿½ao do arquivo de fonte:
 
 	cmp dword [edi], 'LP02'
 	jnz .error
